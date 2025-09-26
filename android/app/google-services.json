@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "874543556897",
+    "project_id": "ddelivery-app",
+    "storage_bucket": "ddelivery-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:874543556897:android:88eccd326ffd1e177eb660",
+        "android_client_info": {
+          "package_name": "com.example.delivery_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBIEOR3eZ8-yJZLczYczGczQGYXqDf1tQc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
