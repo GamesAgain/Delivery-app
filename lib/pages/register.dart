@@ -87,6 +87,7 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   // ✅ Register method
+// ✅ Register method
 Future<void> register() async {
   try {
     if (passCtrl.text != confirmCtrl.text) {
@@ -103,20 +104,20 @@ Future<void> register() async {
           password: passCtrl.text.trim(),
         );
 
-    // 2) กำหนด path avatar (ไม่อัปโหลด storage)
+    // 2) เลือก collection ตาม role
+    final collectionName = (widget.role == "ผู้ใช้") ? "users" : "riders";
+
+    // 3) กำหนด avatar path
     String avatarPath;
     if (avatarImage != null) {
-      // ❗️ Flutter ไม่สามารถเซฟไฟล์ runtime ลง assets ได้
-      // ดังนั้นจะเก็บ path เป็น local file path แทน
-      avatarPath = avatarImage!.path;
+      avatarPath = avatarImage!.path; // local file path
     } else {
-      // default avatar
-      avatarPath = "assets/images/avatar.png";
+      avatarPath = "assets/images/avatar.png"; // default asset
     }
 
-    // 3) บันทึกข้อมูลลง Firestore
+    // 4) บันทึกข้อมูลลง Firestore
     await FirebaseFirestore.instance
-        .collection("users")
+        .collection(collectionName)
         .doc(userCred.user!.uid)
         .set({
           "uid": userCred.user!.uid,
@@ -124,13 +125,13 @@ Future<void> register() async {
           "phone": phoneCtrl.text.trim(),
           "username": nameCtrl.text.trim(),
           "role": widget.role,
-          "avatar": avatarPath, // ✅ เก็บ path (asset หรือ local file)
+          "avatar": avatarPath,
           "created_at": FieldValue.serverTimestamp(),
         });
 
-    log("สมัครสำเร็จ ✅");
+    log("สมัครสำเร็จ ✅ -> $collectionName");
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("สมัครสมาชิกสำเร็จ")),
+      SnackBar(content: Text("สมัครสมาชิก${widget.role}สำเร็จ")),
     );
 
     context.go("/"); // ไปหน้า Login
@@ -143,6 +144,7 @@ Future<void> register() async {
     log("Error: $e");
   }
 }
+
 
 
   @override

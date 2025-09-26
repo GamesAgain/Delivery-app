@@ -6,7 +6,6 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:bootstrap_icons/bootstrap_icons.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
-// ✅ เพิ่มเติม: ใช้ Firebase Auth + init แบบปลอดภัยในฟังก์ชัน
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -28,81 +27,77 @@ class _LoginPageState extends State<LoginPage> {
   final TextEditingController passwordController = TextEditingController();
 
   // ===== ฟังก์ชัน Login (อีเมลหรือชื่อผู้ใช้) =====
-  Future<void> loginUser() async {
-    final inputUser = usernameController.text.trim();
-    final inputPass = passwordController.text.trim();
+Future<void> loginUser() async {
+  final inputUser = usernameController.text.trim();
+  final inputPass = passwordController.text.trim();
 
-    if (inputUser.isEmpty || inputPass.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('กรุณากรอกข้อมูลให้ครบ')),
-      );
-      return;
-    }
-
-    try {
-      // ✅ กันพัง: ถ้ายังไม่ initialize ให้ทำตรงนี้
-      if (Firebase.apps.isEmpty) {
-        await Firebase.initializeApp();
-      }
-
-      String? emailToLogin;
-
-      if (inputUser.contains('@')) {
-        // ผู้ใช้กรอกอีเมลโดยตรง
-        emailToLogin = inputUser;
-      } else {
-        // ผู้ใช้กรอก "ชื่อผู้ใช้" → หาอีเมลจาก Firestore
-        // รองรับทั้ง 'users' และ 'user' (กันกรณีสะกดไม่เหมือนในโปรเจ็กต์)
-        final usersCol = FirebaseFirestore.instance.collection('users');
-        final userCol = FirebaseFirestore.instance.collection('user');
-
-        QuerySnapshot snap = await usersCol
-            .where('username', isEqualTo: inputUser)
-            .limit(1)
-            .get();
-
-        if (snap.docs.isEmpty) {
-          // ลองอีกคอลเลกชัน
-          snap = await userCol
-              .where('username', isEqualTo: inputUser)
-              .limit(1)
-              .get();
-        }
-
-        if (snap.docs.isEmpty) {
-          throw Exception('ไม่พบชื่อผู้ใช้');
-        }
-
-        final data = snap.docs.first.data() as Map<String, dynamic>;
-        emailToLogin = (data['email'] ?? '').toString().trim();
-
-        if (emailToLogin.isEmpty) {
-          throw Exception('บัญชีนี้ไม่มีอีเมลสำหรับเข้าสู่ระบบ');
-        }
-      }
-
-      // ✅ ล็อกอินด้วย Firebase Auth
-      await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: emailToLogin,
-        password: inputPass,
-      );
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('เข้าสู่ระบบสำเร็จ ✅')),
-      );
-
-      // ไปหน้า home (เปลี่ยนเป็นเส้นทางของคุณได้)
-      context.push('/home');
-    } on FirebaseAuthException catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Auth Error: ${e.message}')),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('เกิดข้อผิดพลาด: $e')),
-      );
-    }
+  if (inputUser.isEmpty || inputPass.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('กรุณากรอกข้อมูลให้ครบ')),
+    );
+    return;
   }
+
+  try {
+    // init Firebase ป้องกัน error
+    if (Firebase.apps.isEmpty) {
+      await Firebase.initializeApp();
+    }
+
+    String? emailToLogin;
+    final collectionName = (role == "ผู้ใช้") ? "users" : "riders";
+
+    if (inputUser.contains('@')) {
+      // กรอกอีเมลโดยตรง → ไปเช็คใน collection ที่เลือก
+      final snap = await FirebaseFirestore.instance
+          .collection(collectionName)
+          .where("email", isEqualTo: inputUser)
+          .limit(1)
+          .get();
+
+      if (snap.docs.isEmpty) {
+        throw Exception("ไม่พบอีเมลในระบบ $role");
+      }
+
+      emailToLogin = inputUser;
+    } else {
+      // กรอก username → หาอีเมลจาก collection ที่เลือก
+      final snap = await FirebaseFirestore.instance
+          .collection(collectionName)
+          .where("username", isEqualTo: inputUser)
+          .limit(1)
+          .get();
+
+      if (snap.docs.isEmpty) {
+        throw Exception("ไม่พบชื่อผู้ใช้ในระบบ $role");
+      }
+
+      final data = snap.docs.first.data() as Map<String, dynamic>;
+      emailToLogin = (data['email'] ?? '').toString().trim();
+    }
+
+    //  login ผ่าน FirebaseAuth
+    await FirebaseAuth.instance.signInWithEmailAndPassword(
+      email: emailToLogin!,
+      password: inputPass,
+    );
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('เข้าสู่ระบบ $role สำเร็จ ')),
+    );
+
+    context.push('/home');
+  } on FirebaseAuthException catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Auth Error: ${e.message}')),
+    );
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('เกิดข้อผิดพลาด: $e')),
+    );
+  }
+}
+
 
   @override
   Widget build(BuildContext context) {
