@@ -2,6 +2,7 @@ import 'package:delivery_app/pages/index.dart';
 import 'package:delivery_app/pages/login.dart';
 import 'package:delivery_app/pages/registerChoice.dart';
 import 'package:delivery_app/pages/register.dart';
+import 'package:delivery_app/pages/register_rider.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
@@ -53,7 +54,14 @@ class MyApp extends StatelessWidget {
           path: '/index',
           pageBuilder: (context, state) => buildTransitionPage(
             key: state.pageKey,
-            child: Index() // ฟอร์มไรเดอร์
+            child: Index(), // ฟอร์มไรเดอร์
+          ),
+        ),
+        GoRoute(
+          path: '/register_rider',
+          pageBuilder: (context, state) => buildTransitionPage(
+            key: state.pageKey,
+            child: RegisterRiderPage(),
           ),
         ),
       ],

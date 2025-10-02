@@ -2,6 +2,7 @@ import 'dart:developer';
 import 'dart:io';
 
 import 'package:bootstrap_icons/bootstrap_icons.dart';
+import 'package:delivery_app/pages/register_rider.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -87,65 +88,62 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   // ✅ Register method
-// ✅ Register method
-Future<void> register() async {
-  try {
-    if (passCtrl.text != confirmCtrl.text) {
+  Future<void> register() async {
+    try {
+      if (passCtrl.text != confirmCtrl.text) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text("รหัสผ่านไม่ตรงกัน")));
+        return;
+      }
+
+      // 1) สมัคร Auth ด้วย Email จริง
+      final userCred = await FirebaseAuth.instance
+          .createUserWithEmailAndPassword(
+            email: emailCtrl.text.trim(),
+            password: passCtrl.text.trim(),
+          );
+
+      // 2) เลือก collection ตาม role
+      final collectionName = (widget.role == "ผู้ใช้") ? "users" : "riders";
+
+      // 3) กำหนด avatar path
+      String avatarPath;
+      if (avatarImage != null) {
+        avatarPath = avatarImage!.path; // local file path
+      } else {
+        avatarPath = "assets/images/avatar.png"; // default asset
+      }
+
+      // 4) บันทึกข้อมูลลง Firestore
+      await FirebaseFirestore.instance
+          .collection(collectionName)
+          .doc(userCred.user!.uid)
+          .set({
+            "uid": userCred.user!.uid,
+            "email": emailCtrl.text.trim(),
+            "phone": phoneCtrl.text.trim(),
+            "username": nameCtrl.text.trim(),
+            "role": widget.role,
+            "avatar": avatarPath,
+            "created_at": FieldValue.serverTimestamp(),
+          });
+
+      log("สมัครสำเร็จ ✅ -> $collectionName");
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("รหัสผ่านไม่ตรงกัน")),
+        SnackBar(content: Text("สมัครสมาชิก${widget.role}สำเร็จ")),
       );
-      return;
+
+      context.go("/"); // ไปหน้า Login
+    } on FirebaseAuthException catch (e) {
+      log("Auth Error: ${e.message}");
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("เกิดข้อผิดพลาด: ${e.message}")));
+    } catch (e) {
+      log("Error: $e");
     }
-
-    // 1) สมัคร Auth ด้วย Email จริง
-    final userCred = await FirebaseAuth.instance
-        .createUserWithEmailAndPassword(
-          email: emailCtrl.text.trim(),
-          password: passCtrl.text.trim(),
-        );
-
-    // 2) เลือก collection ตาม role
-    final collectionName = (widget.role == "ผู้ใช้") ? "users" : "riders";
-
-    // 3) กำหนด avatar path
-    String avatarPath;
-    if (avatarImage != null) {
-      avatarPath = avatarImage!.path; // local file path
-    } else {
-      avatarPath = "assets/images/avatar.png"; // default asset
-    }
-
-    // 4) บันทึกข้อมูลลง Firestore
-    await FirebaseFirestore.instance
-        .collection(collectionName)
-        .doc(userCred.user!.uid)
-        .set({
-          "uid": userCred.user!.uid,
-          "email": emailCtrl.text.trim(),
-          "phone": phoneCtrl.text.trim(),
-          "username": nameCtrl.text.trim(),
-          "role": widget.role,
-          "avatar": avatarPath,
-          "created_at": FieldValue.serverTimestamp(),
-        });
-
-    log("สมัครสำเร็จ ✅ -> $collectionName");
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("สมัครสมาชิก${widget.role}สำเร็จ")),
-    );
-
-    context.go("/"); // ไปหน้า Login
-  } on FirebaseAuthException catch (e) {
-    log("Auth Error: ${e.message}");
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("เกิดข้อผิดพลาด: ${e.message}")),
-    );
-  } catch (e) {
-    log("Error: $e");
   }
-}
-
-
 
   @override
   Widget build(BuildContext context) {
@@ -227,6 +225,13 @@ Future<void> register() async {
                             fontSize: 26,
                             fontWeight: FontWeight.bold,
                             color: Colors.white,
+                            shadows: [
+                              Shadow(
+                                offset: Offset(1.5, 1.5),
+                                blurRadius: 2.0,
+                                color: Color(0xFF16A34A),
+                              ),
+                            ],
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -401,10 +406,30 @@ Future<void> register() async {
                             borderRadius: BorderRadius.circular(10),
                           ),
                         ),
-                        onPressed: register,
-                        child: const Text(
-                          "สมัครสมาชิก",
-                          style: TextStyle(
+                        onPressed: () {
+                          if (widget.role != "ผู้ใช้") {
+                            // Navigator.of(context).push(
+                            //   MaterialPageRoute(
+                            //     builder: (_) => RegisterRiderPage(
+                            //       role: widget.role,
+                            //       imagePath:
+                            //           avatarImage?.path ??
+                            //           "assets/images/avatar.png",
+                            //       emailCtrl: emailCtrl,
+                            //       nameCtrl: nameCtrl.text,
+                            //       phoneCtrl: phoneCtrl.text,
+                            //       passCtrl: passCtrl.text,
+                            //       confirmCtrl: confirmCtrl.text,
+                            //     ),
+                            //   ),
+                            // );
+                          } else {
+                            register();
+                          }
+                        },
+                        child: Text(
+                          widget.role == "ผู้ใช้" ? "สมัครสมาชิก" : "ต่อไป",
+                          style: const TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
                             color: Colors.white,
