@@ -15,11 +15,7 @@ class _IndexState extends State<Index> {
   late int currentIndex;
 
   // เพจแต่ละแท็บ (ตัวอย่าง placeholder — ใส่หน้าแท้จริงของคุณแทนได้เลย)
-  final List<Widget> pages = [
-    HomeTab(),
-    ShipmentTab(),
-    ProfileTab(),
-  ];
+  final List<Widget> pages = [HomeTab(), ShipmentTab(), ProfileTab()];
 
   @override
   void initState() {
@@ -30,9 +26,10 @@ class _IndexState extends State<Index> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      extendBody: true,                // ให้ body ขยายใต้ bottom bar
-      backgroundColor: kDarkBg,        // กันขอบขาวใต้ bottom bar
-      body: IndexedStack(              // เก็บ state ของแต่ละแท็บ
+      extendBody: true, // ให้ body ขยายใต้ bottom bar
+      backgroundColor: kDarkBg, // กันขอบขาวใต้ bottom bar
+      body: IndexedStack(
+        // เก็บ state ของแต่ละแท็บ
         index: currentIndex,
         children: pages,
       ),
@@ -55,9 +52,9 @@ class BottomNavBar extends StatelessWidget {
   final int currentIndex;
   final ValueChanged<int> onTap;
 
-  static const Color bg     = Color(0xFF0B0F19);  // พื้นหลังเข้ม
-  static const Color white  = Colors.white;       // ไอคอน/ข้อความปิด
-  static const Color active = Color(0xFF16A34A);  // เขียวแท็บที่เลือก
+  static const Color bg = Color(0xFF0B0F19); // พื้นหลังเข้ม
+  static const Color white = Colors.white; // ไอคอน/ข้อความปิด
+  static const Color active = Color(0xFF16A34A); // เขียวแท็บที่เลือก
 
   @override
   Widget build(BuildContext context) {
@@ -74,7 +71,7 @@ class BottomNavBar extends StatelessWidget {
               blurRadius: 14,
               offset: Offset(0, -6),
               color: Colors.black26,
-            )
+            ),
           ],
         ),
         child: SafeArea(
@@ -132,7 +129,7 @@ class NavItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const Color active = BottomNavBar.active;
-    const Color white  = BottomNavBar.white;
+    const Color white = BottomNavBar.white;
 
     final Color iconColor = selected ? active : white;
     final Color textColor = selected ? active : white.withOpacity(0.9);
