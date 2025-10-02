@@ -1,4 +1,5 @@
 import 'package:bootstrap_icons/bootstrap_icons.dart';
+import 'package:delivery_app/pages/deliveryList.dart';
 import 'package:flutter/material.dart';
 
 class Index extends StatefulWidget {
@@ -63,8 +64,8 @@ class BottomNavBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return ClipRRect(
       borderRadius: const BorderRadius.only(
-        topLeft: Radius.circular(28),
-        topRight: Radius.circular(28),
+        topLeft: Radius.circular(35),
+        topRight: Radius.circular(35),
       ),
       child: Container(
         decoration: const BoxDecoration(
@@ -179,7 +180,7 @@ class HomeTab extends StatelessWidget {
   Widget build(BuildContext context) {
     return const ColoredBox(
       color: _IndexState.kDarkBg,
-      child: Center(child: Text('หน้าแรก')),
+      child: DeliverylistPage()
     );
   }
 }
