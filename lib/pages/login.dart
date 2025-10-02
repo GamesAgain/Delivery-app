@@ -72,13 +72,13 @@ Future<void> loginUser() async {
         throw Exception("ไม่พบชื่อผู้ใช้ในระบบ $role");
       }
 
-      final data = snap.docs.first.data() as Map<String, dynamic>;
+      final data = snap.docs.first.data();
       emailToLogin = (data['email'] ?? '').toString().trim();
     }
 
     //  login ผ่าน FirebaseAuth
     await FirebaseAuth.instance.signInWithEmailAndPassword(
-      email: emailToLogin!,
+      email: emailToLogin,
       password: inputPass,
     );
 
@@ -86,7 +86,7 @@ Future<void> loginUser() async {
       SnackBar(content: Text('เข้าสู่ระบบ $role สำเร็จ ')),
     );
 
-    context.push('/home');
+    context.push('/index');
   } on FirebaseAuthException catch (e) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Auth Error: ${e.message}')),

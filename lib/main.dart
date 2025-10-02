@@ -1,3 +1,4 @@
+import 'package:delivery_app/pages/index.dart';
 import 'package:delivery_app/pages/login.dart';
 import 'package:delivery_app/pages/registerChoice.dart';
 import 'package:delivery_app/pages/register.dart';
@@ -20,6 +21,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final GoRouter router = GoRouter(
+      initialLocation: '/',
       routes: [
         GoRoute(
           path: '/',
@@ -45,6 +47,13 @@ class MyApp extends StatelessWidget {
           pageBuilder: (context, state) => buildTransitionPage(
             key: state.pageKey,
             child: RegisterPage(role: 'ไรเดอร์'), // ฟอร์มไรเดอร์
+          ),
+        ),
+        GoRoute(
+          path: '/index',
+          pageBuilder: (context, state) => buildTransitionPage(
+            key: state.pageKey,
+            child: Index() // ฟอร์มไรเดอร์
           ),
         ),
       ],
