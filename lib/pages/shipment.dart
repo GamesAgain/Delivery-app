@@ -10,7 +10,6 @@ class ShipmentPage extends StatefulWidget {
 
 class _ShipmentPageState extends State<ShipmentPage> {
   static const Color bg = Color(0xFF0B0F19);
-  static const Color white = Colors.white;
   static const Color green = Color(0xFF16A34A);
 
   int _selectedIndex = 0;
@@ -23,12 +22,12 @@ class _ShipmentPageState extends State<ShipmentPage> {
       children: [
         Container(
           color: bg,
-          height: 140,
+          height: 170,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Padding(
-                padding: EdgeInsets.fromLTRB(15, 20, 0, 20),
+                padding: EdgeInsets.fromLTRB(15, 45, 0, 25),
                 child: Text(
                   'ประวัติการจัดส่ง',
                   style: TextStyle(
