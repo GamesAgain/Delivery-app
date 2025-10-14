@@ -1,5 +1,6 @@
 import 'package:bootstrap_icons/bootstrap_icons.dart';
 import 'package:delivery_app/pages/deliveryList.dart';
+import 'package:delivery_app/pages/shipment.dart';
 import 'package:flutter/material.dart';
 
 class Index extends StatefulWidget {
@@ -177,7 +178,7 @@ class HomeTab extends StatelessWidget {
   Widget build(BuildContext context) {
     return const ColoredBox(
       color: _IndexState.kDarkBg,
-      child: DeliverylistPage()
+      child: DeliverylistPage(),
     );
   }
 }
@@ -187,10 +188,7 @@ class ShipmentTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const ColoredBox(
-      color: _IndexState.kDarkBg,
-      child: Center(child: Text('การจัดส่ง')),
-    );
+    return ColoredBox(color: _IndexState.kDarkBg, child: ShipmentPage());
   }
 }
 
