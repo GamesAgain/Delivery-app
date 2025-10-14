@@ -1,5 +1,6 @@
 import 'package:bootstrap_icons/bootstrap_icons.dart';
 import 'package:delivery_app/pages/deliveryList.dart';
+import 'package:delivery_app/pages/profile.dart';
 import 'package:delivery_app/pages/shipment.dart';
 import 'package:flutter/material.dart';
 
@@ -199,7 +200,7 @@ class ProfileTab extends StatelessWidget {
   Widget build(BuildContext context) {
     return const ColoredBox(
       color: _IndexState.kDarkBg,
-      child: Center(child: Text('โปรไฟล์')),
+      child: Center(child: ProfilePage()),
     );
   }
 }
