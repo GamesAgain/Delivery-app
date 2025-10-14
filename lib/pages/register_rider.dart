@@ -219,8 +219,7 @@ class _RegisterRiderPageState extends State<RegisterRiderPage> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(minWidth: 140),
+                      Expanded(
                         child: SizedBox(
                           height: 48,
                           child: OutlinedButton(
@@ -238,12 +237,14 @@ class _RegisterRiderPageState extends State<RegisterRiderPage> {
                               ),
                               minimumSize: Size(0, 48),
                             ),
-                            onPressed: () {},
+                            onPressed: () {
+                              context.pop();
+                            },
                             child: const Text(
                               "ย้อนกลับ",
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
-                                fontSize: 16,
+                                fontSize: 15,
                               ),
                             ),
                           ),
@@ -251,8 +252,7 @@ class _RegisterRiderPageState extends State<RegisterRiderPage> {
                       ),
 
                       const SizedBox(width: 12),
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(minWidth: 200),
+                      Expanded(
                         child: SizedBox(
                           height: 48,
                           child: ElevatedButton(
@@ -273,7 +273,7 @@ class _RegisterRiderPageState extends State<RegisterRiderPage> {
                               "สมัครบัญชีไรเดอร์",
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
-                                fontSize: 16,
+                                fontSize: 15,
                               ),
                             ),
                           ),

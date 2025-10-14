@@ -408,6 +408,7 @@ class _RegisterPageState extends State<RegisterPage> {
                         ),
                         onPressed: () {
                           if (widget.role != "ผู้ใช้") {
+                            context.push('/register_rider');
                             // Navigator.of(context).push(
                             //   MaterialPageRoute(
                             //     builder: (_) => RegisterRiderPage(
