@@ -2,7 +2,9 @@ import 'dart:developer';
 import 'dart:io';
 
 import 'package:bootstrap_icons/bootstrap_icons.dart';
+import 'package:delivery_app/components/custom_dialog.dart';
 import 'package:delivery_app/pages/register_rider.dart';
+import 'package:delivery_app/services/upload_img.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -10,7 +12,6 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 
-import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
@@ -23,12 +24,11 @@ class RegisterPage extends StatefulWidget {
 }
 
 class _RegisterPageState extends State<RegisterPage> {
+  bool submitting = false;
   bool obscurePassword = true;
   bool obscureConfirm = true;
   File? avatarImage;
   final ImagePicker picker = ImagePicker();
-
-  final Future<FirebaseApp> firebase = Firebase.initializeApp();
 
   // ✅ controllers
   final TextEditingController emailCtrl = TextEditingController();
@@ -89,6 +89,7 @@ class _RegisterPageState extends State<RegisterPage> {
 
   // ✅ Register method
   Future<void> register() async {
+    if (submitting) return;
     try {
       if (passCtrl.text != confirmCtrl.text) {
         ScaffoldMessenger.of(
@@ -97,25 +98,52 @@ class _RegisterPageState extends State<RegisterPage> {
         return;
       }
 
-      // 1) สมัคร Auth ด้วย Email จริง
+      setState(() => submitting = true); // ⬅️ เริ่มโหลด
+
+      // ===== เลือก collection =====
+      final collectionName = (widget.role == "ผู้ใช้") ? "users" : "riders";
+
+      final snap = await FirebaseFirestore.instance
+          .collection(collectionName)
+          .where(
+            'username',
+            isEqualTo: nameCtrl.text,
+          ) // ถ้าไม่มีช่องนี้ ให้ใช้ 'username'
+          .limit(1)
+          .get();
+
+      if (snap.docs.isNotEmpty) {
+        // เจอแล้ว → ซ้ำ
+        await showErrorDialog(
+          context,
+          title: "สมัครไม่สำเร็จ",
+          message: "ชื่อผู้ใช้ถูกใช้งานแล้ว",
+        );
+        return;
+      }
+
+      // ===== สมัคร Auth =====
       final userCred = await FirebaseAuth.instance
           .createUserWithEmailAndPassword(
             email: emailCtrl.text.trim(),
             password: passCtrl.text.trim(),
           );
 
-      // 2) เลือก collection ตาม role
-      final collectionName = (widget.role == "ผู้ใช้") ? "users" : "riders";
-
-      // 3) กำหนด avatar path
-      String avatarPath;
+      // ===== อัปโหลดรูปไป Cloudinary ถ้ามี =====
+      String avatarUrl;
       if (avatarImage != null) {
-        avatarPath = avatarImage!.path; // local file path
+        final result = await UploadImgService.uploadFile(
+          file: File(avatarImage!.path),
+          folder: '$collectionName/avatars',
+        );
+        avatarUrl = result.secureUrl ?? result.url ?? "";
+        if (avatarUrl.isEmpty)
+          throw Exception("อัปโหลดรูปสำเร็จ แต่ไม่ได้รับ URL");
       } else {
-        avatarPath = "assets/images/avatar.png"; // default asset
+        avatarUrl = "assets/images/avatar.png";
       }
 
-      // 4) บันทึกข้อมูลลง Firestore
+      // ===== เซฟ Firestore =====
       await FirebaseFirestore.instance
           .collection(collectionName)
           .doc(userCred.user!.uid)
@@ -125,23 +153,38 @@ class _RegisterPageState extends State<RegisterPage> {
             "phone": phoneCtrl.text.trim(),
             "username": nameCtrl.text.trim(),
             "role": widget.role,
-            "avatar": avatarPath,
+            "avatar": avatarUrl,
             "created_at": FieldValue.serverTimestamp(),
           });
 
-      log("สมัครสำเร็จ ✅ -> $collectionName");
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("สมัครสมาชิก${widget.role}สำเร็จ")),
-      );
+      if (!mounted) return;
 
-      context.go("/"); // ไปหน้า Login
+      // ✅ แจ้งผลสำเร็จ (SnackBar หรือ Dialog อย่างใดอย่างหนึ่ง)
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("สมัครบัญชีสำเร็จ")));
+
+      // หรือใช้ Dialog สวย ๆ
+      await showSuccessDialog(context);
+
+      context.go("/"); // กลับหน้า Login
     } on FirebaseAuthException catch (e) {
-      log("Auth Error: ${e.message}");
+      if (!mounted) return;
+      String errMes = '';
+      if (e.toString().contains('by another account.')) {
+        errMes = 'อีเมลนี้ถูกใช้งานแล้ว โปรดลองใหม่';
+      }
+      showErrorDialog(context, title: "สมัครไม่สำเร็จ", message: errMes);
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text("เกิดข้อผิดพลาด: ${e.message}")));
     } catch (e) {
-      log("Error: $e");
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("เกิดข้อผิดพลาด: $e")));
+    } finally {
+      if (mounted) setState(() => submitting = false); // ⬅️ หยุดโหลด
     }
   }
 
@@ -272,7 +315,7 @@ class _RegisterPageState extends State<RegisterPage> {
                       child: ClipOval(
                         child: avatarImage == null
                             ? Image.asset(
-                                "assets/images/avatar.png",
+                                defaultAvatarForRole(widget.role),
                                 width: 90,
                                 height: 90,
                                 fit: BoxFit.cover,
@@ -406,36 +449,76 @@ class _RegisterPageState extends State<RegisterPage> {
                             borderRadius: BorderRadius.circular(10),
                           ),
                         ),
-                        onPressed: () {
-                          if (widget.role != "ผู้ใช้") {
-                            context.push('/register_rider');
-                            // Navigator.of(context).push(
-                            //   MaterialPageRoute(
-                            //     builder: (_) => RegisterRiderPage(
-                            //       role: widget.role,
-                            //       imagePath:
-                            //           avatarImage?.path ??
-                            //           "assets/images/avatar.png",
-                            //       emailCtrl: emailCtrl,
-                            //       nameCtrl: nameCtrl.text,
-                            //       phoneCtrl: phoneCtrl.text,
-                            //       passCtrl: passCtrl.text,
-                            //       confirmCtrl: confirmCtrl.text,
-                            //     ),
-                            //   ),
-                            // );
-                          } else {
-                            register();
-                          }
-                        },
-                        child: Text(
-                          widget.role == "ผู้ใช้" ? "สมัครสมาชิก" : "ต่อไป",
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                            color: Colors.white,
-                          ),
-                        ),
+                        onPressed: submitting
+                            ? null
+                            : () async {
+                                // 1) เช็คกรอกครบ
+                                if (emailCtrl.text.trim().isEmpty ||
+                                    phoneCtrl.text.trim().isEmpty ||
+                                    nameCtrl.text.trim().isEmpty ||
+                                    passCtrl.text.trim().isEmpty ||
+                                    confirmCtrl.text.trim().isEmpty) {
+                                  await showErrorDialog(
+                                    context,
+                                    title: "ข้อมูลไม่ครบ",
+                                    message:
+                                        "กรุณากรอกข้อมูลให้ครบทุกช่องก่อนดำเนินการต่อ",
+                                  );
+                                  return;
+                                }
+
+                                // 2) เช็ครหัสผ่านตรงกัน
+                                if (passCtrl.text.trim() !=
+                                    confirmCtrl.text.trim()) {
+                                  await showErrorDialog(
+                                    context,
+                                    title: "รหัสผ่านไม่ตรงกัน",
+                                    message:
+                                        "กรุณากรอกยืนยันรหัสผ่านให้ตรงกับรหัสผ่าน",
+                                  );
+                                  return;
+                                }
+
+                                // 3) ไปหน้ารายละเอียดไรเดอร์ หรือสมัครผู้ใช้ทันที
+                                if (widget.role != "ผู้ใช้") {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) => RegisterRiderPage(
+                                        role: widget.role,
+                                        avatarImage: avatarImage,
+                                        emailCtrl:
+                                            emailCtrl, // ส่ง controller ตามที่หน้าปลายทางต้องการ
+                                        nameCtrl: nameCtrl.text.trim(),
+                                        phoneCtrl: phoneCtrl.text.trim(),
+                                        passCtrl: passCtrl.text.trim(),
+                                        confirmCtrl: confirmCtrl.text.trim(),
+                                      ),
+                                    ),
+                                  );
+                                } else {
+                                  await register(); // ฟังก์ชันสมัครผู้ใช้เดิม
+                                }
+                              },
+
+                        child: submitting
+                            ? const SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : Text(
+                                widget.role == "ผู้ใช้"
+                                    ? "สมัครสมาชิก"
+                                    : "ต่อไป",
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                  color: Colors.white,
+                                ),
+                              ),
                       ),
                     ),
 
@@ -484,4 +567,11 @@ class _RegisterPageState extends State<RegisterPage> {
       });
     }
   }
+}
+
+String defaultAvatarForRole(String role) {
+  final isUser = role == "ผู้ใช้";
+  return isUser
+      ? "assets/images/user_avatar.png"
+      : "assets/images/rider_avatar.png";
 }

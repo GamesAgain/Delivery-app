@@ -22,7 +22,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final GoRouter router = GoRouter(
-      initialLocation: '/register_rider',
+      initialLocation: '/',
       routes: [
         GoRoute(
           path: '/',
@@ -55,13 +55,6 @@ class MyApp extends StatelessWidget {
           pageBuilder: (context, state) => buildTransitionPage(
             key: state.pageKey,
             child: Index(), // ฟอร์มไรเดอร์
-          ),
-        ),
-        GoRoute(
-          path: '/register_rider',
-          pageBuilder: (context, state) => buildTransitionPage(
-            key: state.pageKey,
-            child: RegisterRiderPage(),
           ),
         ),
       ],
