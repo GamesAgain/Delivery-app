@@ -1,6 +1,10 @@
 import 'dart:io';
 
 import 'package:bootstrap_icons/bootstrap_icons.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:delivery_app/components/custom_dialog.dart';
+import 'package:delivery_app/services/upload_img.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
@@ -9,22 +13,23 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 
 class RegisterRiderPage extends StatefulWidget {
-  // final String? imagePath;
-  // final TextEditingController emailCtrl;
-  // final String? nameCtrl;
-  // final String? phoneCtrl;
-  // final String? passCtrl;
-  // final String? confirmCtrl;
-  // final String role;
+  final File? avatarImage; // รูปโปรไฟล์จากหน้าแรก
+  final TextEditingController emailCtrl;
+  final String? nameCtrl;
+  final String? phoneCtrl;
+  final String? passCtrl;
+  final String? confirmCtrl;
+  final String role;
+
   const RegisterRiderPage({
     super.key,
-    // required this.imagePath,
-    // required this.emailCtrl,
-    // this.nameCtrl,
-    // this.phoneCtrl,
-    // this.passCtrl,
-    // this.confirmCtrl,
-    // required this.role,
+    required this.avatarImage,
+    required this.emailCtrl,
+    this.nameCtrl,
+    this.phoneCtrl,
+    this.passCtrl,
+    this.confirmCtrl,
+    required this.role,
   });
 
   @override
@@ -33,8 +38,16 @@ class RegisterRiderPage extends StatefulWidget {
 
 class _RegisterRiderPageState extends State<RegisterRiderPage> {
   final TextEditingController _plateCtrl = TextEditingController();
-  File? avatarImage;
   final ImagePicker picker = ImagePicker();
+  File? verhicalImage; // รูปยานพาหนะ
+  bool _submitting = false;
+
+  @override
+  void dispose() {
+    _plateCtrl.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -43,7 +56,6 @@ class _RegisterRiderPageState extends State<RegisterRiderPage> {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 40, 16, 16),
           child: Container(
-            height: double.infinity,
             width: double.infinity,
             decoration: BoxDecoration(
               color: const Color(0xFF111827),
@@ -60,7 +72,7 @@ class _RegisterRiderPageState extends State<RegisterRiderPage> {
                         decoration: BoxDecoration(
                           color: const Color(0x1416A34A),
                           borderRadius: BorderRadius.circular(25),
-                          boxShadow: [
+                          boxShadow: const [
                             BoxShadow(
                               color: Colors.black26,
                               offset: Offset(0, 4),
@@ -72,7 +84,7 @@ class _RegisterRiderPageState extends State<RegisterRiderPage> {
                           padding: const EdgeInsets.all(6),
                           child: Row(
                             children: [
-                              CircleAvatar(
+                              const CircleAvatar(
                                 radius: 22,
                                 backgroundColor: Colors.green,
                                 child: Icon(
@@ -82,11 +94,9 @@ class _RegisterRiderPageState extends State<RegisterRiderPage> {
                                 ),
                               ),
                               Padding(
-                                padding: const EdgeInsets.fromLTRB(
-                                  14,
-                                  6,
-                                  14,
-                                  6,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 6,
                                 ),
                                 child: Text(
                                   'Delivery',
@@ -109,9 +119,9 @@ class _RegisterRiderPageState extends State<RegisterRiderPage> {
                   // === Title ลงทะเบียนยานพาหนะ ===
                   Row(
                     children: [
-                      Text(
+                      const Text(
                         "ลงทะเบียนยานพาหนะ",
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 26,
                           fontWeight: FontWeight.bold,
                           color: Colors.white,
@@ -134,11 +144,11 @@ class _RegisterRiderPageState extends State<RegisterRiderPage> {
                   ),
 
                   const SizedBox(height: 8),
-                  Align(
+                  const Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
                       "กรุณากรอกข้อมูลยานพาหนะเบื้องต้น",
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: Color(0xFFBBB9B9),
                         fontSize: 14,
                       ),
@@ -147,10 +157,12 @@ class _RegisterRiderPageState extends State<RegisterRiderPage> {
 
                   const SizedBox(height: 24),
 
+                  // รูปยานพาหนะ (สี่เหลี่ยม)
                   RectAvatar(width: 350, height: 180, borderRadius: 5),
 
                   const SizedBox(height: 12),
 
+                  // เลือกรูปยานพาหนะ
                   buildTextField(
                     controller: TextEditingController(),
                     readOnly: true,
@@ -166,22 +178,17 @@ class _RegisterRiderPageState extends State<RegisterRiderPage> {
                       children: [
                         IconButton(
                           onPressed: () => pickImage(ImageSource.camera),
-                          icon: const Icon(
-                            Icons.camera_alt,
-                            color: Colors.black87,
-                          ),
+                          icon: const Icon(Icons.camera_alt, color: Colors.black87),
                         ),
                         IconButton(
                           onPressed: () => pickImage(ImageSource.gallery),
-                          icon: const Icon(
-                            Icons.photo_library,
-                            color: Colors.black87,
-                          ),
+                          icon: const Icon(Icons.photo_library, color: Colors.black87),
                         ),
                       ],
                     ),
                   ),
 
+                  // กรอกเลขทะเบียน
                   buildTextField(
                     controller: _plateCtrl,
                     readOnly: false,
@@ -192,30 +199,11 @@ class _RegisterRiderPageState extends State<RegisterRiderPage> {
                       color: Colors.black87,
                       size: 20,
                     ),
-                    suffix: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          onPressed: () => pickImage(ImageSource.camera),
-                          icon: const Icon(
-                            Icons.camera_alt,
-                            color: Colors.black87,
-                          ),
-                        ),
-                        IconButton(
-                          onPressed: () => pickImage(ImageSource.gallery),
-                          icon: const Icon(
-                            Icons.photo_library,
-                            color: Colors.black87,
-                          ),
-                        ),
-                      ],
-                    ),
                   ),
 
                   const SizedBox(height: 24),
 
-                  // === ปุ่มสมัคร ===
+                  // ปุ่มย้อนกลับ / สมัครบัญชีไรเดอร์
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -232,14 +220,9 @@ class _RegisterRiderPageState extends State<RegisterRiderPage> {
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(10),
                               ),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                              ),
-                              minimumSize: Size(0, 48),
+                              minimumSize: const Size(0, 48),
                             ),
-                            onPressed: () {
-                              context.pop();
-                            },
+                            onPressed: _submitting ? null : () => context.pop(),
                             child: const Text(
                               "ย้อนกลับ",
                               style: TextStyle(
@@ -250,7 +233,6 @@ class _RegisterRiderPageState extends State<RegisterRiderPage> {
                           ),
                         ),
                       ),
-
                       const SizedBox(width: 12),
                       Expanded(
                         child: SizedBox(
@@ -263,19 +245,25 @@ class _RegisterRiderPageState extends State<RegisterRiderPage> {
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(10),
                               ),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                              ),
-                              minimumSize: Size(0, 48),
+                              minimumSize: const Size(0, 48),
                             ),
-                            onPressed: () {},
-                            child: const Text(
-                              "สมัครบัญชีไรเดอร์",
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 15,
-                              ),
-                            ),
+                            onPressed: _submitting ? null : registerRider,
+                            child: _submitting
+                                ? const SizedBox(
+                                    width: 22,
+                                    height: 22,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Text(
+                                    "สมัครบัญชีไรเดอร์",
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 15,
+                                    ),
+                                  ),
                           ),
                         ),
                       ),
@@ -284,7 +272,7 @@ class _RegisterRiderPageState extends State<RegisterRiderPage> {
 
                   const SizedBox(height: 16),
 
-                  // === ไปหน้า Login ===
+                  // ไปหน้า Login
                   RichText(
                     text: TextSpan(
                       style: const TextStyle(
@@ -322,7 +310,7 @@ class _RegisterRiderPageState extends State<RegisterRiderPage> {
     final pickedFile = await picker.pickImage(source: source);
     if (pickedFile != null) {
       setState(() {
-        avatarImage = File(pickedFile.path);
+        verhicalImage = File(pickedFile.path);
       });
     }
   }
@@ -342,14 +330,122 @@ class _RegisterRiderPageState extends State<RegisterRiderPage> {
       clipBehavior: Clip.antiAlias,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(borderRadius),
-        child: avatarImage == null
-            ? Image.asset("assets/images/avatar.png", fit: BoxFit.cover)
-            : Image.file(avatarImage!, fit: BoxFit.cover),
+        child: verhicalImage == null
+            ? Image.asset("assets/images/vehicle_placeholder_700x360.png", fit: BoxFit.cover)
+            : Image.file(verhicalImage!, fit: BoxFit.cover),
       ),
     );
   }
+
+  Future<void> registerRider() async {
+    if (_submitting) return;
+    try {
+      // ✅ ตรวจข้อมูลพื้นฐานที่ส่งมาจากหน้าแรก + หน้านี้
+      if (widget.emailCtrl.text.trim().isEmpty ||
+          (widget.nameCtrl ?? '').trim().isEmpty ||
+          (widget.phoneCtrl ?? '').trim().isEmpty ||
+          (widget.passCtrl ?? '').trim().isEmpty ||
+          (widget.confirmCtrl ?? '').trim().isEmpty ||
+          _plateCtrl.text.trim().isEmpty) {
+        await showErrorDialog(
+          context,
+          title: "ข้อมูลไม่ครบ",
+          message: "กรุณากรอกข้อมูลให้ครบทุกช่องก่อนดำเนินการต่อ",
+        );
+        return;
+      }
+
+      if (widget.passCtrl!.trim() != widget.confirmCtrl!.trim()) {
+        await showErrorDialog(
+          context,
+          title: "รหัสผ่านไม่ตรงกัน",
+          message: "กรุณากรอกยืนยันรหัสผ่านให้ตรงกับรหัสผ่าน",
+        );
+        return;
+      }
+
+      setState(() => _submitting = true);
+
+      // ===== สร้างบัญชี Firebase Auth =====
+      final userCred = await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: widget.emailCtrl.text.trim(),
+        password: widget.passCtrl!.trim(),
+      );
+      // ===== อัปโหลดรูปไป Cloudinary ถ้ามี =====
+      String avatarUrl;
+      if (widget.avatarImage != null) {
+        final result = await UploadImgService.uploadFile(
+          file: File(widget.avatarImage!.path),
+          folder: 'riders/avatars',
+        );
+        avatarUrl = result.secureUrl ?? result.url ?? "";
+        if (avatarUrl.isEmpty) {
+          throw Exception("อัปโหลดรูปสำเร็จ แต่ไม่ได้รับ URL");
+        }
+      } else {
+        avatarUrl = "assets/images/avatar.png";
+      }
+
+
+      // ===== อัปโหลดรูปยานพาหนะไป Cloudinary (ถ้ามี) =====
+      String vehicleImageUrl;
+      if (verhicalImage != null) {
+        final result = await UploadImgService.uploadFile(
+          file: File(verhicalImage!.path),
+          folder: 'riders/vehicles',
+        );
+        vehicleImageUrl = result.secureUrl ?? result.url ?? "";
+        if (vehicleImageUrl.isEmpty) {
+          throw Exception("อัปโหลดรูปสำเร็จ แต่ไม่ได้รับ URL");
+        }
+      } else {
+        // ถ้าไม่เลือกรูปยานพาหนะ จะใช้ภาพ default (asset)
+        vehicleImageUrl = "assets/images/vehicle_placeholder_700x360.png";
+      }
+
+      // ===== บันทึกข้อมูลลง Firestore (collection: riders) =====
+      await FirebaseFirestore.instance
+          .collection("riders")
+          .doc(userCred.user!.uid)
+          .set({
+        "uid": userCred.user!.uid,
+        "email": widget.emailCtrl.text.trim(),
+        "phone": widget.phoneCtrl,
+        "username": widget.nameCtrl,
+        "role": widget.role,
+        "vehicle_plate": _plateCtrl.text.trim(),
+        "vehicle_image": vehicleImageUrl,
+        "avatar": avatarUrl, // รูปโปรไฟล์จากหน้าแรก (ถ้ามี)
+        "created_at": FieldValue.serverTimestamp(),
+      });
+
+      if (!mounted) return;
+
+      await showSuccessDialog(
+        context,
+        onOk: () => context.go("/"), // กลับหน้า Login
+      );
+    } on FirebaseAuthException catch (e) {
+      String err = "";
+      if (e.code == 'email-already-in-use') {
+        err = "อีเมลนี้ถูกใช้งานแล้ว";
+      } else if (e.code == 'weak-password') {
+        err = "รหัสผ่านสั้นเกินไป";
+      } else if (e.code == 'invalid-email') {
+        err = "รูปแบบอีเมลไม่ถูกต้อง";
+      } else {
+        err = e.message ?? "เกิดข้อผิดพลาดไม่ทราบสาเหตุ";
+      }
+      await showErrorDialog(context, title: "สมัครไม่สำเร็จ", message: err);
+    } catch (e) {
+      await showErrorDialog(context, title: "เกิดข้อผิดพลาด", message: e.toString());
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
 }
 
+// ===== helper textfield (เหมือนหน้าแรก เพื่อโทนเดียวกัน) =====
 Widget buildTextField({
   required String label,
   required String hint,
@@ -365,10 +461,7 @@ Widget buildTextField({
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: const TextStyle(color: Color(0xFFBBB9B9), fontSize: 12),
-        ),
+        Text(label, style: const TextStyle(color: Color(0xFFBBB9B9), fontSize: 12)),
         const SizedBox(height: 6),
         TextField(
           controller: controller,
@@ -385,10 +478,7 @@ Widget buildTextField({
             fillColor: Colors.white,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(
-                color: Color(0xFFC7C0C0),
-                width: 1.5,
-              ),
+              borderSide: const BorderSide(color: Color(0xFFC7C0C0), width: 1.5),
             ),
           ),
         ),
