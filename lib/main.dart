@@ -2,7 +2,6 @@ import 'package:delivery_app/pages/index.dart';
 import 'package:delivery_app/pages/login.dart';
 import 'package:delivery_app/pages/registerChoice.dart';
 import 'package:delivery_app/pages/register.dart';
-import 'package:delivery_app/pages/register_rider.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
@@ -22,7 +21,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final GoRouter router = GoRouter(
-      initialLocation: '/',
+      initialLocation: '/index',
       routes: [
         GoRoute(
           path: '/',

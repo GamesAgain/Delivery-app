@@ -1,4 +1,5 @@
 import 'package:bootstrap_icons/bootstrap_icons.dart';
+import 'package:delivery_app/pages/addDelivery.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -164,7 +165,11 @@ class _DeliverylistPageState extends State<DeliverylistPage> {
                         ),
                         padding: const EdgeInsets.symmetric(vertical: 4),
                       ),
-                      onPressed: () {},
+                      onPressed: () {
+                        Navigator.of(
+                          context,
+                        ).push(MaterialPageRoute(builder: (_) => AddDeliveryPage()));
+                      },
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 4),
                         child: Row(
