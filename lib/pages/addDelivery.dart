@@ -4,7 +4,6 @@ import 'package:bootstrap_icons/bootstrap_icons.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:delivery_app/components/custom_TextField.dart';
 import 'package:delivery_app/services/upload_img.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:go_router/go_router.dart';
@@ -20,10 +19,11 @@ class AddDeliveryPage extends StatefulWidget {
 
 class _AddDeliveryPageState extends State<AddDeliveryPage> {
   final TextEditingController deliNameCtrl = TextEditingController();
-  final TextEditingController telnoSearchCtrl = TextEditingController();
   final TextEditingController noteCtrl = TextEditingController();
   final ImagePicker picker = ImagePicker();
-  File? deliveryImage; // รูปสินค้า
+
+  Map<String, dynamic>? _selectedReceiver;
+  File? deliveryImage;
   bool _submitting = false;
 
   @override
@@ -136,14 +136,18 @@ class _AddDeliveryPageState extends State<AddDeliveryPage> {
 
                     const SizedBox(height: 24),
 
-                    // รูปยานพาหนะ (สี่เหลี่ยม)
+                    // รูปสินค้า
                     RectAvatar(width: 350, height: 180, borderRadius: 5),
 
                     const SizedBox(height: 12),
 
-                    // เลือกรูปยานพาหนะ
+                    // เลือกรูปสินค้า
                     buildTextField(
-                      controller: TextEditingController(),
+                      controller: TextEditingController(
+                        text: deliveryImage != null
+                            ? "เลือกรูปภาพเรียบร้อยแล้ว"
+                            : "",
+                      ),
                       readOnly: true,
                       label: "เลือกรูปสินค้า",
                       hint: "เลือกรูปสินค้าที่จะจัดส่ง",
@@ -186,16 +190,56 @@ class _AddDeliveryPageState extends State<AddDeliveryPage> {
                       ),
                     ),
 
-                    // เลือกผู้รับ
-                    buildTextField(
-                      controller: deliNameCtrl,
-                      readOnly: false,
-                      label: "เลือกผู้รับ",
-                      hint: "กรอกเบอร์โทรเพื่อค้นหาผู้รับสินค้า",
-                      prefix: const Icon(
-                        BootstrapIcons.send_fill,
-                        color: Colors.black87,
-                        size: 20,
+                    // เลือกผู้รับ (Widget ที่กดได้)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            "  เลือกผู้รับ",
+                            style: TextStyle(
+                              color: Color(0xFFBBB9B9),
+                              fontSize: 13,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          InkWell(
+                            onTap: _showReceiverPicker,
+                            child: Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 14,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    BootstrapIcons.send_fill,
+                                    color: Colors.black87,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Text(
+                                    _selectedReceiver != null
+                                        ? _selectedReceiver!['username']
+                                        : "กรอกข้อมูลเพื่อค้นหาผู้รับสินค้า",
+                                    style: TextStyle(
+                                      color: _selectedReceiver != null
+                                          ? Colors.black87
+                                          : Color(0xFF848484),
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
 
@@ -214,7 +258,7 @@ class _AddDeliveryPageState extends State<AddDeliveryPage> {
 
                     const SizedBox(height: 24),
 
-                    // ปุ่มย้อนกลับ / สมัครบัญชีไรเดอร์
+                    // ปุ่มย้อนกลับ / เรียกไรเดอร์
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -231,7 +275,6 @@ class _AddDeliveryPageState extends State<AddDeliveryPage> {
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(10),
                                 ),
-                                minimumSize: const Size(0, 48),
                               ),
                               onPressed: _submitting
                                   ? null
@@ -258,11 +301,8 @@ class _AddDeliveryPageState extends State<AddDeliveryPage> {
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(10),
                                 ),
-                                minimumSize: const Size(0, 48),
                               ),
-                              onPressed: () {
-                                addDeliveryItem();
-                              },
+                              onPressed: _submitting ? null : addDeliveryItem,
                               child: _submitting
                                   ? const SizedBox(
                                       width: 22,
@@ -321,45 +361,403 @@ class _AddDeliveryPageState extends State<AddDeliveryPage> {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(borderRadius),
         child: deliveryImage == null
-            ? Image.asset(
-                "assets/images/vehicle_placeholder_700x360.png",
-                fit: BoxFit.cover,
-              )
-            : Image.file(deliveryImage!, fit: BoxFit.cover),
+            ? Image.asset("assets/images/Delivery Image.png", fit: BoxFit.fill)
+            : Image.file(deliveryImage!, fit: BoxFit.fill),
       ),
     );
   }
 
-  void addDeliveryItem() async {
-    final collectionName = "delivery";
+  void _showReceiverPicker() async {
+    final result = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        minChildSize: 0.5,
+        maxChildSize: 0.9,
+        builder: (_, controller) =>
+            ReceiverPickerSheet(scrollController: controller),
+      ),
+    );
 
-    // ===== อัปโหลดรูปไป Cloudinary ถ้ามี =====
-      String itemImageUrl;
+    if (result != null) {
+      setState(() {
+        _selectedReceiver = result;
+      });
+    }
+  }
+
+  void addDeliveryItem() async {
+    if (deliNameCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("กรุณากรอกชื่อสินค้า")));
+      return;
+    }
+    if (_selectedReceiver == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("กรุณาเลือกผู้รับสินค้า")));
+      return;
+    }
+
+    setState(() {
+      _submitting = true;
+    });
+
+    try {
+      final collectionName = "delivery";
+
+      String itemImageUrl = "";
       if (deliveryImage != null) {
         final result = await UploadImgService.uploadFile(
           file: File(deliveryImage!.path),
           folder: '$collectionName/item_images',
         );
         itemImageUrl = result.secureUrl ?? result.url ?? "";
-        if (itemImageUrl.isEmpty)
+        if (itemImageUrl.isEmpty) {
           throw Exception("อัปโหลดรูปสำเร็จ แต่ไม่ได้รับ URL");
-      } else {
-        itemImageUrl = "assets/images/avatar.png";
+        }
       }
 
-    final docRef = FirebaseFirestore.instance.collection(collectionName).doc();
-    final data = {
-      "did": docRef.id,
-      "item_name": deliNameCtrl.text.trim(),
-      "item_image": itemImageUrl,
-      "sender_uid ": "senderUid",
-      "receiver_uid ": "kLJRWjVhEJNzSjtNxUF6cVwdyDm1",
-      "pickup_addr_id ": "test",
-      "dropoff_addr_id  ": "test",
-      "note ": noteCtrl.text,
-      "created_at": FieldValue.serverTimestamp(),
-    };
-    // ===== เซฟ Firestore =====
-    await docRef.set(data);
+      final docRef = FirebaseFirestore.instance
+          .collection(collectionName)
+          .doc();
+      final data = {
+        "did": docRef.id,
+        "item_name": deliNameCtrl.text.trim(),
+        "item_image": itemImageUrl,
+        "sender_uid": "senderUid", // TODO: แก้ไข
+        "receiver_uid": _selectedReceiver!['uid'],
+        "pickup_addr_id": "test", // TODO: แก้ไข
+        "dropoff_addr_id": "test", // TODO: แก้ไข
+        "note": noteCtrl.text.trim(),
+        "created_at": FieldValue.serverTimestamp(),
+        "status": "pending",
+      };
+
+      await docRef.set(data);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("สร้างรายการจัดส่งสำเร็จ!")));
+      context.pop();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("เกิดข้อผิดพลาด: ${e.toString()}")),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _submitting = false;
+        });
+      }
+    }
+  }
+}
+
+// =======================================================================
+// ==       Receiver Picker Bottom Sheet (UPDATED SEARCH LOGIC)       ==
+// =======================================================================
+
+class ReceiverPickerSheet extends StatefulWidget {
+  final ScrollController scrollController;
+  const ReceiverPickerSheet({super.key, required this.scrollController});
+
+  @override
+  State<ReceiverPickerSheet> createState() => _ReceiverPickerSheetState();
+}
+
+class _ReceiverPickerSheetState extends State<ReceiverPickerSheet> {
+  final TextEditingController _searchCtrl = TextEditingController();
+  List<Map<String, dynamic>> searchResults = [];
+  bool isLoading = false;
+  String searchQuery = '';
+  String searchType = 'phone';
+
+  Future<void> searchUsers() async {
+    final searchTerm = _searchCtrl.text.trim();
+    if (searchTerm.isEmpty) return;
+
+    setState(() {
+      isLoading = true;
+      searchQuery = searchTerm;
+      searchResults = [];
+    });
+
+    try {
+      Query query = FirebaseFirestore.instance.collection('users');
+
+      // --- vvv NEW LOGIC vvv ---
+      if (searchType == 'phone') {
+        // ค้นหาเบอร์โทรแบบตรงตัว
+        query = query.where('phone', isEqualTo: searchTerm);
+      } else if (searchType == 'username') {
+        // ค้นหาชื่อผู้ใช้แบบ "starts-with"
+        // query จะหาเอกสารทั้งหมดที่ field 'username'
+        // เริ่มต้นด้วยคำที่ใช้ค้นหา (searchTerm)
+        query = query
+            .where('username', isGreaterThanOrEqualTo: searchTerm)
+            .where('username', isLessThanOrEqualTo: '$searchTerm\uf8ff');
+      }
+      // --- ^^^ NEW LOGIC ^^^ ---
+
+      final querySnapshot = await query.get();
+
+      final users = querySnapshot.docs.map((doc) {
+        final data =
+            doc.data()! as Map<String, dynamic>; // Ensure data is a Map
+        data['uid'] = doc.id;
+        return data;
+      }).toList();
+
+      if (mounted) {
+        setState(() {
+          searchResults = users;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("เกิดข้อผิดพลาดในการค้นหา: $e")));
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
+      }
+    }
+  }
+
+  Widget buildUserCard(Map<String, dynamic> user) {
+    return GestureDetector(
+      onTap: () => Navigator.pop(context, user),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF9FAFB),
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.25),
+              blurRadius: 5,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 35,
+              backgroundImage: NetworkImage(
+                user['avatar'] ?? 'https://via.placeholder.com/150',
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildInfoRow('ชื่อ', user['username'] ?? 'N/A'),
+                  const SizedBox(height: 4),
+                  _buildInfoRow('เบอร์โทรศัพท์', user['phone'] ?? 'N/A'),
+                  const SizedBox(height: 4),
+                  _buildInfoRow(
+                    'ตำแหน่งที่รับ',
+                    'เชียงยืน, นาทอง, มหาสารคาม 44160',
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value) {
+    return RichText(
+      text: TextSpan(
+        style: const TextStyle(
+          fontSize: 15,
+          color: Colors.black87,
+          fontFamily: 'Sarabun',
+        ),
+        children: [
+          TextSpan(
+            text: '$label : ',
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          TextSpan(text: value),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(24),
+          topRight: Radius.circular(24),
+        ),
+      ),
+      child: Column(
+        children: [
+          // แถบค้นหา
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0B0F19),
+              borderRadius: BorderRadius.circular(10),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.25),
+                  blurRadius: 2,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 20, 10, 16),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.05),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.05),
+                          ),
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            dropdownColor: const Color(0xFF111827),
+                            value: searchType,
+                            items: const [
+                              DropdownMenuItem(
+                                value: 'phone',
+                                child: Text(
+                                  "เบอร์โทร",
+                                  style: TextStyle(color: Colors.white),
+                                ),
+                              ),
+                              DropdownMenuItem(
+                                value: 'username',
+                                child: Text(
+                                  "ชื่อผู้ใช้",
+                                  style: TextStyle(color: Colors.white),
+                                ),
+                              ),
+                            ],
+                            onChanged: (String? newValue) {
+                              if (newValue != null) {
+                                setState(() {
+                                  searchType = newValue;
+                                  _searchCtrl.clear();
+                                });
+                              }
+                            },
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          style: const TextStyle(
+                            color: Colors.black,
+                            fontSize: 16,
+                          ),
+                          controller: _searchCtrl,
+                          decoration: InputDecoration(
+                            hintText: searchType == 'phone'
+                                ? "ค้นหาจากเบอร์โทร"
+                                : "ค้นหาจากชื่อผู้ใช้",
+                            hintStyle: const TextStyle(fontSize: 14),
+                            filled: true,
+                            fillColor: const Color(0xFFF3F4F6),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: BorderSide(
+                                color: Colors.grey.shade300,
+                              ),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: BorderSide(
+                                color: Colors.grey.shade300,
+                              ),
+                            ),
+                          ),
+                          keyboardType: searchType == 'phone'
+                              ? TextInputType.phone
+                              : TextInputType.text,
+                          onSubmitted: (_) => searchUsers(),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        onPressed: searchUsers,
+                        icon: const Icon(
+                          Icons.search,
+                          color: Colors.black54,
+                          size: 18,
+                        ),
+                        style: IconButton.styleFrom(
+                          backgroundColor: const Color(0xFFF3F4F6),
+                          padding: const EdgeInsets.all(14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            side: BorderSide(color: Colors.grey.shade300),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // ส่วนแสดงผลลัพธ์
+          Expanded(
+            child: isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : searchResults.isEmpty
+                ? Center(
+                    child: Text(
+                      searchQuery.isEmpty
+                          ? "กรอกข้อมูลเพื่อค้นหา"
+                          : "ไม่พบข้อมูลจาก: $searchQuery",
+                      style: TextStyle(color: Colors.grey.shade600),
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.only(top: 8),
+                    controller: widget.scrollController,
+                    itemCount: searchResults.length,
+                    itemBuilder: (context, index) {
+                      final user = searchResults[index];
+                      return buildUserCard(user);
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
   }
 }
