@@ -1,12 +1,20 @@
 import 'package:bootstrap_icons/bootstrap_icons.dart';
+import 'package:delivery_app/models/user.dart';
 import 'package:delivery_app/pages/deliveryList.dart';
 import 'package:delivery_app/pages/profile.dart';
 import 'package:delivery_app/pages/shipment.dart';
 import 'package:flutter/material.dart';
 
 class Index extends StatefulWidget {
-  const Index({super.key, this.initialIndex = 0});
-  final int initialIndex; // รองรับอนาคตถ้าจะส่งค่าเริ่มจาก router
+  final String? uid;
+  final Users profile;
+  final int initialIndex;
+  const Index({
+    super.key,
+    this.initialIndex = 0,
+    required this.uid,
+    required this.profile,
+  });
 
   @override
   State<Index> createState() => _IndexState();
@@ -18,7 +26,11 @@ class _IndexState extends State<Index> {
   late int currentIndex;
 
   // เพจแต่ละแท็บ (ตัวอย่าง placeholder — ใส่หน้าแท้จริงของคุณแทนได้เลย)
-  final List<Widget> pages = [HomeTab(), ShipmentTab(), ProfileTab()];
+  List<Widget> get pages => [
+    HomeTab(),
+    ShipmentTab(),
+    ProfileTab(uid: widget.uid, profile: widget.profile),
+  ];
 
   @override
   void initState() {
@@ -57,7 +69,7 @@ class BottomNavBar extends StatelessWidget {
 
   static const Color bg = Color(0xFF0B0F19); // พื้นหลังเข้ม
   static const Color white = Colors.white; // ไอคอน/ข้อความปิด
-  static const Color active = Color(0xFF16A34A); // เขียวแท็บที่เลือก
+  static const Color active = Color(0xFF16A34A);
 
   @override
   Widget build(BuildContext context) {
@@ -194,13 +206,18 @@ class ShipmentTab extends StatelessWidget {
 }
 
 class ProfileTab extends StatelessWidget {
-  const ProfileTab();
+  const ProfileTab({this.uid, required this.profile});
+
+  final String? uid;
+  final Users profile;
 
   @override
   Widget build(BuildContext context) {
-    return const ColoredBox(
+    return ColoredBox(
       color: _IndexState.kDarkBg,
-      child: Center(child: ProfilePage()),
+      child: Center(
+        child: ProfilePage(uid: uid, profile: profile),
+      ),
     );
   }
 }
