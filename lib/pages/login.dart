@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:delivery_app/models/user.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -27,77 +28,86 @@ class _LoginPageState extends State<LoginPage> {
   final TextEditingController passwordController = TextEditingController();
 
   // ===== ฟังก์ชัน Login (อีเมลหรือชื่อผู้ใช้) =====
-Future<void> loginUser() async {
-  final inputUser = usernameController.text.trim();
-  final inputPass = passwordController.text.trim();
+  Future<void> loginUser() async {
+    final inputUser = usernameController.text.trim();
+    final inputPass = passwordController.text.trim();
 
-  if (inputUser.isEmpty || inputPass.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('กรุณากรอกข้อมูลให้ครบ')),
-    );
-    return;
-  }
-
-  try {
-    // init Firebase ป้องกัน error
-    if (Firebase.apps.isEmpty) {
-      await Firebase.initializeApp();
+    if (inputUser.isEmpty || inputPass.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('กรุณากรอกข้อมูลให้ครบ')));
+      return;
     }
 
-    String? emailToLogin;
-    final collectionName = (role == "ผู้ใช้") ? "users" : "riders";
-
-    if (inputUser.contains('@')) {
-      // กรอกอีเมลโดยตรง → ไปเช็คใน collection ที่เลือก
-      final snap = await FirebaseFirestore.instance
-          .collection(collectionName)
-          .where("email", isEqualTo: inputUser)
-          .limit(1)
-          .get();
-
-      if (snap.docs.isEmpty) {
-        throw Exception("ไม่พบอีเมลในระบบ $role");
+    try {
+      // init Firebase ป้องกัน error
+      if (Firebase.apps.isEmpty) {
+        await Firebase.initializeApp();
       }
 
-      emailToLogin = inputUser;
-    } else {
-      // กรอก username → หาอีเมลจาก collection ที่เลือก
-      final snap = await FirebaseFirestore.instance
-          .collection(collectionName)
-          .where("username", isEqualTo: inputUser)
-          .limit(1)
-          .get();
+      String? emailToLogin;
+      final collectionName = (role == "ผู้ใช้") ? "users" : "riders";
 
-      if (snap.docs.isEmpty) {
-        throw Exception("ไม่พบชื่อผู้ใช้ในระบบ $role");
+      if (inputUser.contains('@')) {
+        // กรอกอีเมลโดยตรง → ไปเช็คใน collection ที่เลือก
+        final snap = await FirebaseFirestore.instance
+            .collection(collectionName)
+            .where("email", isEqualTo: inputUser)
+            .limit(1)
+            .get();
+
+        if (snap.docs.isEmpty) {
+          throw Exception("ไม่พบอีเมลในระบบ $role");
+        }
+
+        emailToLogin = inputUser;
+      } else {
+        // กรอก username → หาอีเมลจาก collection ที่เลือก
+        final snap = await FirebaseFirestore.instance
+            .collection(collectionName)
+            .where("username", isEqualTo: inputUser)
+            .limit(1)
+            .get();
+
+        if (snap.docs.isEmpty) {
+          throw Exception("ไม่พบชื่อผู้ใช้ในระบบ $role");
+        }
+
+        final data = snap.docs.first.data();
+        emailToLogin = (data['email'] ?? '').toString().trim();
       }
 
-      final data = snap.docs.first.data();
-      emailToLogin = (data['email'] ?? '').toString().trim();
+      //  login ผ่าน FirebaseAuth
+      final userCredential = await FirebaseAuth.instance
+          .signInWithEmailAndPassword(email: emailToLogin, password: inputPass);
+
+      final UserID = userCredential.user!.uid;
+
+      final profDoc = await FirebaseFirestore.instance
+          .collection(collectionName)
+          .doc(UserID)
+          .get();
+      final profile = profDoc.data();
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('เข้าสู่ระบบ $role สำเร็จ ')));
+
+      context.goNamed(
+        'index',
+        queryParameters: {'uid': UserID},
+        extra: Users.fromMap(profile!),
+      );
+    } on FirebaseAuthException catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Auth Error: ${e.message}')));
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('เกิดข้อผิดพลาด: $e')));
     }
-
-    //  login ผ่าน FirebaseAuth
-    await FirebaseAuth.instance.signInWithEmailAndPassword(
-      email: emailToLogin,
-      password: inputPass,
-    );
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('เข้าสู่ระบบ $role สำเร็จ ')),
-    );
-
-    context.push('/index');
-  } on FirebaseAuthException catch (e) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Auth Error: ${e.message}')),
-    );
-  } catch (e) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('เกิดข้อผิดพลาด: $e')),
-    );
   }
-}
-
 
   @override
   Widget build(BuildContext context) {
@@ -163,7 +173,10 @@ Future<void> loginUser() async {
                                 ),
                                 Padding(
                                   padding: const EdgeInsets.fromLTRB(
-                                    14, 6, 14, 6,
+                                    14,
+                                    6,
+                                    14,
+                                    6,
                                   ),
                                   child: Text(
                                     'Delivery',
