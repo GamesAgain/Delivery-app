@@ -1,6 +1,5 @@
-import 'dart:async';
-import 'package:awesome_snackbar_content/awesome_snackbar_content.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:delivery_app/components/custom_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
@@ -172,22 +171,13 @@ class _AddNewAddressState extends State<AddNewAddress> {
     };
     await docRef.set(newAddress);
 
-    final snackBar = SnackBar(
-      elevation: 0,
-      behavior: SnackBarBehavior.floating,
-      backgroundColor: Colors.transparent,
-      content: AwesomeSnackbarContent(
-        title: 'สำเร็จ!',
-        message: 'บันทึกที่อยู่เรียบร้อยแล้ว 🎉',
-        contentType: ContentType.success,
-      ),
-    );
+    if (!mounted) return;
 
-    if (context.mounted) {
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(snackBar);
-    }
+    await showSuccessDialog(
+      context,
+      title: 'สำเร็จ!',
+      message: 'บันทึกที่อยู่เรียบร้อยแล้ว 🎉',
+    );
   }
 }
 

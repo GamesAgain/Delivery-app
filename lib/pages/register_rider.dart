@@ -423,6 +423,7 @@ class _RegisterRiderPageState extends State<RegisterRiderPage> {
 
       await showSuccessDialog(
         context,
+        message: "สมัครบัญชีสำเร็จ",
         onOk: () => context.go("/"), // กลับหน้า Login
       );
     } on FirebaseAuthException catch (e) {
