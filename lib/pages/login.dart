@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:delivery_app/components/custom_dialog.dart';
 import 'package:delivery_app/models/user.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -33,9 +34,11 @@ class _LoginPageState extends State<LoginPage> {
     final inputPass = passwordController.text.trim();
 
     if (inputUser.isEmpty || inputPass.isEmpty) {
-      ScaffoldMessenger.of(
+      await showWarningSnackBar(
         context,
-      ).showSnackBar(const SnackBar(content: Text('กรุณากรอกข้อมูลให้ครบ')));
+        title: 'ข้อมูลไม่ครบ',
+        message: 'กรุณากรอกข้อมูลให้ครบ',
+      );
       return;
     }
 
@@ -89,23 +92,29 @@ class _LoginPageState extends State<LoginPage> {
           .get();
       final profile = profDoc.data();
 
-      ScaffoldMessenger.of(
+      await showSuccessDialog(
         context,
-      ).showSnackBar(SnackBar(content: Text('เข้าสู่ระบบ $role สำเร็จ ')));
+        message: 'เข้าสู่ระบบ $role สำเร็จ',
+      );
 
+      if (!mounted) return;
       context.goNamed(
         'index',
         queryParameters: {'uid': UserID},
         extra: Users.fromMap(profile!),
       );
     } on FirebaseAuthException catch (e) {
-      ScaffoldMessenger.of(
+      await showErrorDialog(
         context,
-      ).showSnackBar(SnackBar(content: Text('Auth Error: ${e.message}')));
+        title: 'เข้าสู่ระบบไม่สำเร็จ',
+        message: 'Auth Error: ${e.message}',
+      );
     } catch (e) {
-      ScaffoldMessenger.of(
+      await showErrorDialog(
         context,
-      ).showSnackBar(SnackBar(content: Text('เกิดข้อผิดพลาด: $e')));
+        title: 'เกิดข้อผิดพลาด',
+        message: 'เกิดข้อผิดพลาด: $e',
+      );
     }
   }
 
@@ -411,11 +420,11 @@ class _LoginPageState extends State<LoginPage> {
                                 ],
                               ),
                               GestureDetector(
-                                onTap: () {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text("ไปหน้าลืมรหัสผ่าน"),
-                                    ),
+                                onTap: () async {
+                                  await showInfoSnackBar(
+                                    context,
+                                    title: 'ลืมรหัสผ่าน',
+                                    message: 'ไปหน้าลืมรหัสผ่าน',
                                   );
                                 },
                                 child: const Text(

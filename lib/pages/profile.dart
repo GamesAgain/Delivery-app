@@ -1,3 +1,4 @@
+import 'package:delivery_app/components/custom_dialog.dart';
 import 'package:delivery_app/models/user.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -92,10 +93,9 @@ class _ProfilePageState extends State<ProfilePage> {
                       if (!mounted) return;
                       if (updated is Users) {
                         setState(() => _profile = updated);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('อัปเดตข้อมูลส่วนตัวเรียบร้อยแล้ว'),
-                          ),
+                        await showSuccessDialog(
+                          context,
+                          message: 'อัปเดตข้อมูลส่วนตัวเรียบร้อยแล้ว',
                         );
                       }
                     },

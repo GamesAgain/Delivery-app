@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:bootstrap_icons/bootstrap_icons.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:delivery_app/components/custom_TextField.dart';
+import 'package:delivery_app/components/custom_dialog.dart';
 import 'package:delivery_app/services/upload_img.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
@@ -390,15 +391,19 @@ class _AddDeliveryPageState extends State<AddDeliveryPage> {
 
   void addDeliveryItem() async {
     if (deliNameCtrl.text.trim().isEmpty) {
-      ScaffoldMessenger.of(
+      await showWarningSnackBar(
         context,
-      ).showSnackBar(const SnackBar(content: Text("กรุณากรอกชื่อสินค้า")));
+        title: "ข้อมูลไม่ครบ",
+        message: "กรุณากรอกชื่อสินค้า",
+      );
       return;
     }
     if (_selectedReceiver == null) {
-      ScaffoldMessenger.of(
+      await showWarningSnackBar(
         context,
-      ).showSnackBar(const SnackBar(content: Text("กรุณาเลือกผู้รับสินค้า")));
+        title: "ข้อมูลไม่ครบ",
+        message: "กรุณาเลือกผู้รับสินค้า",
+      );
       return;
     }
 
@@ -440,14 +445,17 @@ class _AddDeliveryPageState extends State<AddDeliveryPage> {
       await docRef.set(data);
 
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      await showSuccessDialog(
         context,
-      ).showSnackBar(const SnackBar(content: Text("สร้างรายการจัดส่งสำเร็จ!")));
+        message: "สร้างรายการจัดส่งสำเร็จ!",
+      );
       context.pop();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("เกิดข้อผิดพลาด: ${e.toString()}")),
+      await showErrorDialog(
+        context,
+        title: "เกิดข้อผิดพลาด",
+        message: "เกิดข้อผิดพลาด: ${e.toString()}",
       );
     } finally {
       if (mounted) {
@@ -521,9 +529,11 @@ class _ReceiverPickerSheetState extends State<ReceiverPickerSheet> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
+        await showErrorDialog(
           context,
-        ).showSnackBar(SnackBar(content: Text("เกิดข้อผิดพลาดในการค้นหา: $e")));
+          title: "เกิดข้อผิดพลาด",
+          message: "เกิดข้อผิดพลาดในการค้นหา: $e",
+        );
       }
     } finally {
       if (mounted) {

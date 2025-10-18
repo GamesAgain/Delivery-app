@@ -90,9 +90,11 @@ class _RegisterPageState extends State<RegisterPage> {
     if (submitting) return;
     try {
       if (passCtrl.text != confirmCtrl.text) {
-        ScaffoldMessenger.of(
+        await showErrorDialog(
           context,
-        ).showSnackBar(const SnackBar(content: Text("รหัสผ่านไม่ตรงกัน")));
+          title: "รหัสผ่านไม่ตรงกัน",
+          message: "กรุณากรอกยืนยันรหัสผ่านให้ตรงกับรหัสผ่าน",
+        );
         return;
       }
 
@@ -157,13 +159,11 @@ class _RegisterPageState extends State<RegisterPage> {
 
       if (!mounted) return;
 
-      // ✅ แจ้งผลสำเร็จ (SnackBar หรือ Dialog อย่างใดอย่างหนึ่ง)
-      ScaffoldMessenger.of(
+      // ✅ แจ้งผลสำเร็จด้วย Awesome Snackbar
+      await showSuccessDialog(
         context,
-      ).showSnackBar(const SnackBar(content: Text("สมัครบัญชีสำเร็จ")));
-
-      // หรือใช้ Dialog สวย ๆ
-      await showSuccessDialog(context);
+        message: "สมัครบัญชีสำเร็จ",
+      );
 
       context.go("/"); // กลับหน้า Login
     } on FirebaseAuthException catch (e) {
@@ -172,15 +172,20 @@ class _RegisterPageState extends State<RegisterPage> {
       if (e.toString().contains('by another account.')) {
         errMes = 'อีเมลนี้ถูกใช้งานแล้ว โปรดลองใหม่';
       }
-      showErrorDialog(context, title: "สมัครไม่สำเร็จ", message: errMes);
-      ScaffoldMessenger.of(
+      await showErrorDialog(
         context,
-      ).showSnackBar(SnackBar(content: Text("เกิดข้อผิดพลาด: ${e.message}")));
+        title: "สมัครไม่สำเร็จ",
+        message: errMes.isNotEmpty
+            ? errMes
+            : 'เกิดข้อผิดพลาด: ${e.message ?? 'ไม่ทราบสาเหตุ'}',
+      );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      await showErrorDialog(
         context,
-      ).showSnackBar(SnackBar(content: Text("เกิดข้อผิดพลาด: $e")));
+        title: "เกิดข้อผิดพลาด",
+        message: "เกิดข้อผิดพลาด: $e",
+      );
     } finally {
       if (mounted) setState(() => submitting = false); // ⬅️ หยุดโหลด
     }

@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:bootstrap_icons/bootstrap_icons.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:delivery_app/components/custom_dialog.dart';
 import 'package:delivery_app/models/user.dart';
 import 'package:delivery_app/services/upload_img.dart';
 import 'package:flutter/material.dart';
@@ -64,8 +65,10 @@ class _EditProfilePageState extends State<EditProfilePage> {
       });
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('ไม่สามารถเลือกรูปภาพได้: $e')),
+      await showWarningSnackBar(
+        context,
+        title: 'ไม่สามารถเลือกรูปภาพได้',
+        message: '$e',
       );
     }
   }
@@ -116,8 +119,10 @@ class _EditProfilePageState extends State<EditProfilePage> {
       context.pop(updatedUser);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('เกิดข้อผิดพลาดในการบันทึกข้อมูล: $e')),
+      await showErrorDialog(
+        context,
+        title: 'เกิดข้อผิดพลาด',
+        message: 'เกิดข้อผิดพลาดในการบันทึกข้อมูล: $e',
       );
     } finally {
       if (mounted) {
