@@ -1,5 +1,6 @@
 import 'package:delivery_app/models/user.dart';
 import 'package:delivery_app/pages/addNewAddress.dart';
+import 'package:delivery_app/pages/editProfile.dart';
 import 'package:delivery_app/pages/index.dart';
 import 'package:delivery_app/pages/login.dart';
 import 'package:delivery_app/pages/pickAddressMap.dart';
@@ -74,6 +75,17 @@ class MyApp extends StatelessWidget {
             return buildTransitionPage(
               key: state.pageKey,
               child: ProfilePage(uid: uid, profile: profile),
+            );
+          },
+        ),
+        GoRoute(
+          path: '/profile/edit',
+          name: 'editProfile',
+          pageBuilder: (context, state) {
+            final profile = state.extra as Users;
+            return buildTransitionPage(
+              key: state.pageKey,
+              child: EditProfilePage(profile: profile),
             );
           },
         ),
