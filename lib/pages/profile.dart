@@ -13,6 +13,22 @@ class ProfilePage extends StatefulWidget {
 
 class _ProfilePageState extends State<ProfilePage> {
   static const Color green = Color(0xFF16A34A);
+  late Users _profile;
+
+  @override
+  void initState() {
+    super.initState();
+    _profile = widget.profile;
+  }
+
+  @override
+  void didUpdateWidget(covariant ProfilePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.profile != oldWidget.profile) {
+      _profile = widget.profile;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -49,7 +65,7 @@ class _ProfilePageState extends State<ProfilePage> {
               child: Column(
                 children: [
                   Text(
-                    widget.profile.username,
+                    _profile.username,
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 20,
@@ -58,7 +74,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    widget.profile.phone!,
+                    _profile.phone ?? '-',
                     style: const TextStyle(color: Colors.white70, fontSize: 16),
                   ),
                   const SizedBox(height: 25),
@@ -66,8 +82,22 @@ class _ProfilePageState extends State<ProfilePage> {
                   _buildMenu(
                     Icons.person_outline,
                     'แก้ไขข้อมูลส่วนตัว',
-                    onTap: () {
-                      print('แก้ไขข้อมูลส่วนตัว');
+                    onTap: () async {
+                      final updated = await context.pushNamed(
+                        'editProfile',
+                        queryParameters: {'uid': widget.uid},
+                        extra: _profile,
+                      );
+
+                      if (!mounted) return;
+                      if (updated is Users) {
+                        setState(() => _profile = updated);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('อัปเดตข้อมูลส่วนตัวเรียบร้อยแล้ว'),
+                          ),
+                        );
+                      }
                     },
                   ),
                   _buildMenu(
@@ -129,7 +159,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 child: CircleAvatar(
                   radius: 60,
                   backgroundColor: Colors.white,
-                  backgroundImage: NetworkImage(widget.profile.avatar!),
+                  backgroundImage: _buildAvatarImage(),
                 ),
               ),
             ),
@@ -179,5 +209,13 @@ class _ProfilePageState extends State<ProfilePage> {
         ),
       ),
     );
+  }
+
+  ImageProvider _buildAvatarImage() {
+    final avatar = _profile.avatar;
+    if (avatar != null && avatar.isNotEmpty) {
+      return NetworkImage(avatar);
+    }
+    return const AssetImage('assets/images/profile_placeholder.png');
   }
 }
