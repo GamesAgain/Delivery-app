@@ -63,7 +63,6 @@ class _ProfilePageState extends State<ProfilePage> {
                   ),
                   const SizedBox(height: 25),
 
-                  // ✅ ปุ่มคลิกได้จริงทุกอัน
                   _buildMenu(
                     Icons.person_outline,
                     'แก้ไขข้อมูลส่วนตัว',
