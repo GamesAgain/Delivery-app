@@ -1,6 +1,4 @@
-import 'dart:developer';
 import 'dart:io';
-
 import 'package:bootstrap_icons/bootstrap_icons.dart';
 import 'package:delivery_app/components/custom_dialog.dart';
 import 'package:delivery_app/pages/register_rider.dart';

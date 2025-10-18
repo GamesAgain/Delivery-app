@@ -2,6 +2,7 @@ import 'package:delivery_app/models/user.dart';
 import 'package:delivery_app/pages/addNewAddress.dart';
 import 'package:delivery_app/pages/index.dart';
 import 'package:delivery_app/pages/login.dart';
+import 'package:delivery_app/pages/pickAddressMap.dart';
 import 'package:delivery_app/pages/profile.dart';
 import 'package:delivery_app/pages/registerChoice.dart';
 import 'package:delivery_app/pages/register.dart';
@@ -9,7 +10,6 @@ import 'package:delivery_app/pages/useraddress.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
-
 import 'package:firebase_core/firebase_core.dart';
 import 'package:delivery_app/firebase_options.dart';
 
@@ -96,6 +96,17 @@ class MyApp extends StatelessWidget {
             return buildTransitionPage(
               key: state.pageKey,
               child: AddNewAddress(uid: uid),
+            );
+          },
+        ),
+        GoRoute(
+          path: '/pickerAddress',
+          name: 'pickerAddress',
+          pageBuilder: (context, state) {
+            final uid = state.uri.queryParameters['uid'];
+            return buildTransitionPage(
+              key: state.pageKey,
+              child: PickAddressMapPage(uid: uid),
             );
           },
         ),
