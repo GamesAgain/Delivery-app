@@ -30,6 +30,8 @@ class _AddDeliveryPageState extends State<AddDeliveryPage> {
   bool _isLoadingAddresses = false;
   File? deliveryImage;
   bool _submitting = false;
+  static const int _initialStatusCode = 1;
+  static const String _initialStatusLabel = "รอไรเดอร์มารับสินค้า";
 
   @override
   Widget build(BuildContext context) {
@@ -496,6 +498,26 @@ class _AddDeliveryPageState extends State<AddDeliveryPage> {
     return doc.id;
   }
 
+  Future<File?> _selectInitialStatusImage() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => const _StatusImagePickerSheet(),
+    );
+
+    if (source == null) {
+      return null;
+    }
+
+    final pickedFile = await picker.pickImage(source: source);
+    if (pickedFile == null) {
+      return null;
+    }
+
+    return File(pickedFile.path);
+  }
+
   void addDeliveryItem() async {
     if (deliNameCtrl.text.trim().isEmpty) {
       await showWarningSnackBar(
@@ -540,12 +562,24 @@ class _AddDeliveryPageState extends State<AddDeliveryPage> {
       return;
     }
 
+    final statusImageFile = await _selectInitialStatusImage();
+    if (statusImageFile == null) {
+      await showWarningSnackBar(
+        context,
+        title: "ข้อมูลไม่ครบ",
+        message: "กรุณาเลือกรูปภาพยืนยันสถานะแรก",
+      );
+      return;
+    }
+
     setState(() {
       _submitting = true;
     });
 
     try {
       final collectionName = "delivery";
+      final docRef =
+          FirebaseFirestore.instance.collection(collectionName).doc();
 
       String itemImageUrl = "";
       if (deliveryImage != null) {
@@ -559,9 +593,16 @@ class _AddDeliveryPageState extends State<AddDeliveryPage> {
         }
       }
 
-      final docRef = FirebaseFirestore.instance
-          .collection(collectionName)
-          .doc();
+      final statusImageUploadResult = await UploadImgService.uploadFile(
+        file: statusImageFile,
+        folder: 'delivery_status_history/${docRef.id}',
+      );
+      final statusImageUrl =
+          statusImageUploadResult.secureUrl ?? statusImageUploadResult.url ?? "";
+      if (statusImageUrl.isEmpty) {
+        throw Exception("อัปโหลดรูปสถานะแรกไม่สำเร็จ");
+      }
+
       final data = {
         "did": docRef.id,
         "item_name": deliNameCtrl.text.trim(),
@@ -572,10 +613,24 @@ class _AddDeliveryPageState extends State<AddDeliveryPage> {
         "dropoff_addr_id": _dropoffAddressId,
         "note": noteCtrl.text.trim(),
         "created_at": FieldValue.serverTimestamp(),
-        "status": "pending",
+        "status_code": _initialStatusCode,
+        "status": _initialStatusLabel,
       };
 
       await docRef.set(data);
+
+      final historyCollection =
+          FirebaseFirestore.instance.collection('delivery_status_history');
+      final historyDoc = historyCollection.doc();
+      await historyDoc.set({
+        "hid": historyDoc.id,
+        "did": docRef.id,
+        "status_code": _initialStatusCode,
+        "image": statusImageUrl,
+        "created_at": FieldValue.serverTimestamp(),
+        "created_by_user_id": senderUid,
+        "created_by_rider_id": null,
+      });
 
       if (!mounted) return;
       await showSuccessDialog(
@@ -597,6 +652,123 @@ class _AddDeliveryPageState extends State<AddDeliveryPage> {
         });
       }
     }
+  }
+}
+
+class _StatusImagePickerSheet extends StatelessWidget {
+  const _StatusImagePickerSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.28,
+      minChildSize: 0.22,
+      maxChildSize: 0.4,
+      builder: (context, scrollController) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(24),
+              topRight: Radius.circular(24),
+            ),
+          ),
+          child: ListView(
+            controller: scrollController,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                "เลือกรูปภาพยืนยันสถานะ",
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF111827),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: _StatusImageSourceButton(
+                      icon: Icons.camera_alt_outlined,
+                      label: "กล้อง",
+                      onTap: () => Navigator.pop(context, ImageSource.camera),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _StatusImageSourceButton(
+                      icon: Icons.photo_library_outlined,
+                      label: "แกลเลอรี",
+                      onTap: () => Navigator.pop(context, ImageSource.gallery),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _StatusImageSourceButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _StatusImageSourceButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 18),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF3F4F6),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFF16A34A), width: 1.2),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              color: const Color(0xFF16A34A),
+              size: 28,
+            ),
+            const SizedBox(height: 10),
+            Text(
+              label,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+                color: Color(0xFF16A34A),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
