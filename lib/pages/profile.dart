@@ -104,7 +104,11 @@ class _ProfilePageState extends State<ProfilePage> {
                     Icons.lock_outline,
                     'จัดการรหัสผ่าน',
                     onTap: () {
-                      print('Tapped!');
+                      context.pushNamed(
+                        'passwordManagement',
+                        queryParameters: {'uid': widget.uid},
+                        extra: _profile,
+                      );
                     },
                   ),
                   _buildMenu(

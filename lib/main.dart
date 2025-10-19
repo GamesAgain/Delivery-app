@@ -3,6 +3,7 @@ import 'package:delivery_app/pages/addNewAddress.dart';
 import 'package:delivery_app/pages/editProfile.dart';
 import 'package:delivery_app/pages/index.dart';
 import 'package:delivery_app/pages/login.dart';
+import 'package:delivery_app/pages/passwordManagement.dart';
 import 'package:delivery_app/pages/pickAddressMap.dart';
 import 'package:delivery_app/pages/profile.dart';
 import 'package:delivery_app/pages/registerChoice.dart';
@@ -86,6 +87,17 @@ class MyApp extends StatelessWidget {
             return buildTransitionPage(
               key: state.pageKey,
               child: EditProfilePage(profile: profile),
+            );
+          },
+        ),
+        GoRoute(
+          path: '/profile/password',
+          name: 'passwordManagement',
+          pageBuilder: (context, state) {
+            final profile = state.extra as Users;
+            return buildTransitionPage(
+              key: state.pageKey,
+              child: PasswordManagementPage(profile: profile),
             );
           },
         ),
