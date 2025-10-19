@@ -115,10 +115,10 @@ class _ProfilePageState extends State<ProfilePage> {
                     Icons.location_on_outlined,
                     'ที่อยู่',
                     onTap: () {
-                      print('Going to address with uid=${widget.uid}');
+                      final uid = widget.uid ?? _profile.uid;
                       context.pushNamed(
                         'address',
-                        queryParameters: {'uid': widget.uid},
+                        queryParameters: {'uid': uid},
                       );
                     },
                   ),
