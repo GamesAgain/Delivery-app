@@ -296,7 +296,7 @@ class _AddNewAddressState extends State<AddNewAddress> {
       child: DropdownButtonFormField<Province>(
         value: _selectedProvince,
         isExpanded: true,
-        decoration: _fieldDecoration(),
+        decoration: _fieldDecoration(hintText: 'เลือกจังหวัด'),
         hint: const Text(
           'เลือกจังหวัด',
           style: TextStyle(color: Color(0xFF848484)),
@@ -330,7 +330,7 @@ class _AddNewAddressState extends State<AddNewAddress> {
       child: DropdownButtonFormField<District>(
         value: _selectedDistrict,
         isExpanded: true,
-        decoration: _fieldDecoration(),
+        decoration: _fieldDecoration(hintText: 'เลือกอำเภอ'),
         hint: const Text(
           'เลือกอำเภอ',
           style: TextStyle(color: Color(0xFF848484)),
@@ -374,7 +374,7 @@ class _AddNewAddressState extends State<AddNewAddress> {
       child: DropdownButtonFormField<SubDistrict>(
         value: _selectedSubDistrict,
         isExpanded: true,
-        decoration: _fieldDecoration(),
+        decoration: _fieldDecoration(hintText: 'เลือกตำบล'),
         hint: const Text(
           'เลือกตำบล',
           style: TextStyle(color: Color(0xFF848484)),
