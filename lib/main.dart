@@ -1,5 +1,7 @@
+import 'package:delivery_app/models/address.dart';
 import 'package:delivery_app/models/user.dart';
 import 'package:delivery_app/pages/addNewAddress.dart';
+import 'package:delivery_app/pages/editAddress.dart';
 import 'package:delivery_app/pages/editProfile.dart';
 import 'package:delivery_app/pages/index.dart';
 import 'package:delivery_app/pages/login.dart';
@@ -120,6 +122,23 @@ class MyApp extends StatelessWidget {
             return buildTransitionPage(
               key: state.pageKey,
               child: AddNewAddress(uid: uid),
+            );
+          },
+        ),
+        GoRoute(
+          path: '/editAddress',
+          name: 'editAddress',
+          pageBuilder: (context, state) {
+            final address = state.extra as Address?;
+            return buildTransitionPage(
+              key: state.pageKey,
+              child: address == null
+                  ? const Scaffold(
+                      body: Center(
+                        child: Text('ไม่พบข้อมูลที่อยู่สำหรับแก้ไข'),
+                      ),
+                    )
+                  : EditAddressPage(address: address),
             );
           },
         ),

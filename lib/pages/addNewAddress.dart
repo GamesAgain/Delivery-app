@@ -1,7 +1,9 @@
 import 'dart:async';
 
+import 'package:bootstrap_icons/bootstrap_icons.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:delivery_app/components/custom_dialog.dart';
+import 'package:delivery_app/models/address.dart';
 import 'package:delivery_app/models/thai_address.dart';
 import 'package:delivery_app/services/thai_address_service.dart';
 import 'package:dio/dio.dart';
@@ -9,16 +11,32 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 
-class AddNewAddress extends StatefulWidget {
-  const AddNewAddress({super.key, this.uid});
+enum AddressFormMode { create, edit }
 
-  final String? uid;
-
-  @override
-  State<AddNewAddress> createState() => _AddNewAddressState();
+class AddNewAddress extends AddressFormPage {
+  const AddNewAddress({super.key, String? uid})
+      : super(uid: uid, mode: AddressFormMode.create);
 }
 
-class _AddNewAddressState extends State<AddNewAddress> {
+class AddressFormPage extends StatefulWidget {
+  const AddressFormPage({
+    super.key,
+    this.uid,
+    this.initialAddress,
+    required this.mode,
+  });
+
+  final String? uid;
+  final Address? initialAddress;
+  final AddressFormMode mode;
+
+  bool get isEditing => mode == AddressFormMode.edit;
+
+  @override
+  State<AddressFormPage> createState() => _AddressFormPageState();
+}
+
+class _AddressFormPageState extends State<AddressFormPage> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final TextEditingController _labelController = TextEditingController();
   final TextEditingController _addressNumberController = TextEditingController();
@@ -49,26 +67,121 @@ class _AddNewAddressState extends State<AddNewAddress> {
   String? _districtError;
   String? _subDistrictError;
 
+  bool get _isEditing => widget.isEditing;
+  Address? get _initialAddress => widget.initialAddress;
+
   @override
   void initState() {
     super.initState();
+    _prefillInitialFields();
     _initialDataFuture = _loadInitialData();
+  }
+
+  void _prefillInitialFields() {
+    final address = _initialAddress;
+    if (address == null) {
+      return;
+    }
+
+    final label = address.label.trim();
+    if (label.isNotEmpty && label != '-') {
+      _labelController.text = label;
+    }
+
+    final extra = address.extra ?? <String, dynamic>{};
+    final addressNumber = (extra['addressNumber'] as String?) ?? '';
+    if (addressNumber.isNotEmpty) {
+      _addressNumberController.text = addressNumber;
+    }
+
+    final postal = (extra['postalCode'] as String?) ??
+        (extra['postcode'] as String?) ??
+        (extra['zipCode'] as String?) ?? '';
+    if (postal.isNotEmpty) {
+      _postalCodeController.text = postal;
+    }
+
+    final resolved = address.fullAddress.trim();
+    if (resolved.isNotEmpty && resolved != '-') {
+      _resolvedAddress = resolved;
+    }
+
+    final lat = address.lat;
+    final lng = address.lng;
+    if (lat != null && lng != null) {
+      _selectedLatLng = LatLng(lat, lng);
+    }
+
+    _setAsDefault = address.isDefault == 0;
   }
 
   Future<void> _loadInitialData() async {
     try {
       final provinces = await _thaiAddressService.getProvinces();
-      if (mounted) {
-        setState(() {
-          _provinces = provinces;
-        });
+      if (!mounted) return;
+      setState(() {
+        _provinces = provinces;
+      });
+      if (_isEditing) {
+        await _prefillGeographyFromExisting();
       }
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _provinceError = 'ไม่สามารถโหลดรายชื่อจังหวัดได้';
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        _provinceError = 'ไม่สามารถโหลดรายชื่อจังหวัดได้';
+      });
+    }
+  }
+
+  Future<void> _prefillGeographyFromExisting() async {
+    final extra = _initialAddress?.extra;
+    if (extra == null || _provinces.isEmpty) {
+      return;
+    }
+
+    final provinceName = _sanitizeName(extra['province'] ?? extra['state']);
+    if (provinceName != null) {
+      final province = _provinces.firstWhere(
+        (element) =>
+            _normalize(element.nameTh) == _normalize(provinceName) ||
+            _normalize(element.nameEn) == _normalize(provinceName),
+        orElse: () => _provinces.first,
+      );
+      await _onProvinceChanged(province, fromAutoFill: true);
+    }
+
+    final districtName = _sanitizeName(extra['district'] ?? extra['county']);
+    if (districtName != null && _districts.isNotEmpty) {
+      final district = _districts.firstWhere(
+        (element) =>
+            _normalize(element.nameTh) == _normalize(districtName) ||
+            _normalize(element.nameEn) == _normalize(districtName),
+        orElse: () => _districts.first,
+      );
+      await _onDistrictChanged(district, fromAutoFill: true);
+    }
+
+    final subDistrictName =
+        _sanitizeName(extra['subDistrict'] ?? extra['subdistrict']);
+    if (subDistrictName != null && _subDistricts.isNotEmpty) {
+      final subDistrict = _subDistricts.firstWhere(
+        (element) =>
+            _normalize(element.nameTh) == _normalize(subDistrictName) ||
+            _normalize(element.nameEn) == _normalize(subDistrictName),
+        orElse: () => _subDistricts.first,
+      );
+      _onSubDistrictChanged(subDistrict);
+    }
+
+    final postal = (extra['postalCode'] as String?) ??
+        (extra['postcode'] as String?) ??
+        (extra['zipCode'] as String?) ?? '';
+    if (postal.isNotEmpty) {
+      _postalCodeController.text = postal;
+    }
+
+    if (mounted) {
+      setState(() {});
     }
   }
 
@@ -82,13 +195,16 @@ class _AddNewAddressState extends State<AddNewAddress> {
 
   @override
   Widget build(BuildContext context) {
+    final title = _isEditing ? 'แก้ไขที่อยู่จัดส่ง' : 'ที่อยู่จัดส่งสินค้าใหม่';
+    final submitText = _isEditing ? 'บันทึกการเปลี่ยนแปลง' : 'บันทึกที่อยู่';
+
     return Scaffold(
       backgroundColor: const Color(0xFF111827),
       appBar: AppBar(
         backgroundColor: const Color(0xFF0B0F19),
-        title: const Text(
-          'ที่อยู่จัดส่งสินค้าใหม่',
-          style: TextStyle(
+        title: Text(
+          title,
+          style: const TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.bold,
             color: Colors.white,
@@ -103,15 +219,16 @@ class _AddNewAddressState extends State<AddNewAddress> {
         ),
         leading: IconButton(
           onPressed: () => context.pop(),
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          icon: const Icon(BootstrapIcons.arrow_left, color: Colors.white),
         ),
       ),
       body: SafeArea(
         child: FutureBuilder<void>(
           future: _initialDataFuture,
           builder: (context, snapshot) {
-            final isLoading = snapshot.connectionState == ConnectionState.waiting &&
-                _provinces.isEmpty;
+            final isLoading =
+                snapshot.connectionState == ConnectionState.waiting &&
+                    _provinces.isEmpty;
             if (isLoading) {
               return const Center(child: CircularProgressIndicator());
             }
@@ -155,7 +272,8 @@ class _AddNewAddressState extends State<AddNewAddress> {
                         ),
                         child: Text(
                           _resolvedAddress!,
-                          style: const TextStyle(color: Colors.white70, height: 1.4),
+                          style:
+                              const TextStyle(color: Colors.white70, height: 1.4),
                         ),
                       ),
                     ],
@@ -248,9 +366,9 @@ class _AddNewAddressState extends State<AddNewAddress> {
                     valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                   ),
                 )
-              : const Text(
-                  'บันทึกที่อยู่',
-                  style: TextStyle(
+              : Text(
+                  submitText,
+                  style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
                     color: Colors.white,
@@ -276,7 +394,7 @@ class _AddNewAddressState extends State<AddNewAddress> {
         children: const [
           Row(
             children: [
-              Icon(Icons.location_on_outlined, color: Colors.white),
+              Icon(BootstrapIcons.geo_alt, color: Colors.white),
               SizedBox(width: 8),
               Text(
                 'เลือกจากแผนที่',
@@ -284,7 +402,7 @@ class _AddNewAddressState extends State<AddNewAddress> {
               ),
             ],
           ),
-          Icon(Icons.chevron_right, color: Colors.white),
+          Icon(BootstrapIcons.chevron_right, color: Colors.white),
         ],
       ),
     );
@@ -297,16 +415,23 @@ class _AddNewAddressState extends State<AddNewAddress> {
         value: _selectedProvince,
         isExpanded: true,
         decoration: _fieldDecoration(hintText: 'เลือกจังหวัด'),
+        style: const TextStyle(color: Colors.black87, fontSize: 14),
+        dropdownColor: Colors.white,
+        iconEnabledColor: Colors.black87,
+        iconDisabledColor: Colors.black45,
         hint: const Text(
           'เลือกจังหวัด',
-          style: TextStyle(color: Color(0xFF848484)),
+          style: TextStyle(color: Color(0xFF444444)),
         ),
         items: _provinces
             .map(
               (province) => DropdownMenuItem<Province>(
                 value: province,
-                child:
-                    Text(province.nameTh, overflow: TextOverflow.ellipsis),
+                child: Text(
+                  province.nameTh,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.black87),
+                ),
               ),
             )
             .toList(),
@@ -331,16 +456,23 @@ class _AddNewAddressState extends State<AddNewAddress> {
         value: _selectedDistrict,
         isExpanded: true,
         decoration: _fieldDecoration(hintText: 'เลือกอำเภอ'),
+        style: const TextStyle(color: Colors.black87, fontSize: 14),
+        dropdownColor: Colors.white,
+        iconEnabledColor: Colors.black87,
+        iconDisabledColor: Colors.black45,
         hint: const Text(
           'เลือกอำเภอ',
-          style: TextStyle(color: Color(0xFF848484)),
+          style: TextStyle(color: Color(0xFF444444)),
         ),
         items: _districts
             .map(
               (district) => DropdownMenuItem<District>(
                 value: district,
-                child:
-                    Text(district.nameTh, overflow: TextOverflow.ellipsis),
+                child: Text(
+                  district.nameTh,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.black87),
+                ),
               ),
             )
             .toList(),
@@ -360,10 +492,14 @@ class _AddNewAddressState extends State<AddNewAddress> {
           return null;
         },
         disabledHint: _loadingDistricts
-            ? const Text('กำลังโหลดอำเภอ...',
-                style: TextStyle(color: Colors.white54))
-            : const Text('เลือกจังหวัดก่อน',
-                style: TextStyle(color: Colors.white54)),
+            ? const Text(
+                'กำลังโหลดอำเภอ...',
+                style: TextStyle(color: Color(0xFF666666)),
+              )
+            : const Text(
+                'เลือกจังหวัดก่อน',
+                style: TextStyle(color: Color(0xFF666666)),
+              ),
       ),
     );
   }
@@ -375,16 +511,23 @@ class _AddNewAddressState extends State<AddNewAddress> {
         value: _selectedSubDistrict,
         isExpanded: true,
         decoration: _fieldDecoration(hintText: 'เลือกตำบล'),
+        style: const TextStyle(color: Colors.black87, fontSize: 14),
+        dropdownColor: Colors.white,
+        iconEnabledColor: Colors.black87,
+        iconDisabledColor: Colors.black45,
         hint: const Text(
           'เลือกตำบล',
-          style: TextStyle(color: Color(0xFF848484)),
+          style: TextStyle(color: Color(0xFF444444)),
         ),
         items: _subDistricts
             .map(
               (subDistrict) => DropdownMenuItem<SubDistrict>(
                 value: subDistrict,
-                child: Text(subDistrict.nameTh,
-                    overflow: TextOverflow.ellipsis),
+                child: Text(
+                  subDistrict.nameTh,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.black87),
+                ),
               ),
             )
             .toList(),
@@ -404,10 +547,14 @@ class _AddNewAddressState extends State<AddNewAddress> {
           return null;
         },
         disabledHint: _loadingSubDistricts
-            ? const Text('กำลังโหลดตำบล...',
-                style: TextStyle(color: Colors.white54))
-            : const Text('เลือกอำเภอก่อน',
-                style: TextStyle(color: Colors.white54)),
+            ? const Text(
+                'กำลังโหลดตำบล...',
+                style: TextStyle(color: Color(0xFF666666)),
+              )
+            : const Text(
+                'เลือกอำเภอก่อน',
+                style: TextStyle(color: Color(0xFF666666)),
+              ),
       ),
     );
   }
@@ -432,7 +579,7 @@ class _AddNewAddressState extends State<AddNewAddress> {
   InputDecoration _fieldDecoration({String? hintText}) {
     return InputDecoration(
       hintText: hintText,
-      hintStyle: const TextStyle(color: Color(0xFF848484), fontSize: 14),
+      hintStyle: const TextStyle(color: Color(0xFF777777), fontSize: 14),
       filled: true,
       fillColor: Colors.white,
       border: OutlineInputBorder(
@@ -504,6 +651,23 @@ class _AddNewAddressState extends State<AddNewAddress> {
   Future<void> _applyAddressComponents(Map<String, dynamic> components) async {
     await _initialDataFuture;
 
+    final labelCandidate = _sanitizeName(
+      components['name'] ??
+          components['house'] ??
+          components['building'] ??
+          components['amenity'] ??
+          components['shop'] ??
+          components['tourism'] ??
+          components['office'] ??
+          components['neighbourhood'] ??
+          components['suburb'],
+    );
+    if (labelCandidate != null &&
+        labelCandidate.isNotEmpty &&
+        _labelController.text.trim().isEmpty) {
+      _labelController.text = labelCandidate;
+    }
+
     final provinceName = _sanitizeName(
       components['state'] ?? components['province'] ?? components['region'],
     );
@@ -566,6 +730,7 @@ class _AddNewAddressState extends State<AddNewAddress> {
     if (line.isNotEmpty) {
       _addressNumberController.text = line;
     }
+
     setState(() {});
   }
 
@@ -577,7 +742,9 @@ class _AddNewAddressState extends State<AddNewAddress> {
       _selectedSubDistrict = null;
       _districts = <District>[];
       _subDistricts = <SubDistrict>[];
-      _postalCodeController.clear();
+      if (!fromAutoFill) {
+        _postalCodeController.clear();
+      }
       _districtError = null;
       _subDistrictError = null;
       _loadingDistricts = true;
@@ -614,6 +781,9 @@ class _AddNewAddressState extends State<AddNewAddress> {
       _selectedDistrict = district;
       _selectedSubDistrict = null;
       _subDistricts = <SubDistrict>[];
+      if (!fromAutoFill) {
+        _postalCodeController.clear();
+      }
       _subDistrictError = null;
       _loadingSubDistricts = true;
     });
@@ -636,10 +806,6 @@ class _AddNewAddressState extends State<AddNewAddress> {
           _loadingSubDistricts = false;
         });
       }
-    }
-
-    if (!fromAutoFill) {
-      _postalCodeController.clear();
     }
   }
 
@@ -672,45 +838,91 @@ class _AddNewAddressState extends State<AddNewAddress> {
       }
 
       final collection = FirebaseFirestore.instance.collection('addresses');
-      final existingSnapshot = await collection
-          .where('uid', isEqualTo: uid)
-          .get();
-      final shouldSetDefault = _setAsDefault || existingSnapshot.docs.isEmpty;
+      final existingSnapshot =
+          await collection.where('uid', isEqualTo: uid).get();
+      final isOnlyAddress = existingSnapshot.docs.length <= 1;
 
-      final docRef = collection.doc();
-      final now = FieldValue.serverTimestamp();
-
-      if (_setAsDefault) {
-        for (final doc in existingSnapshot.docs
-            .where((element) => (element.data()['is_default'] as num?)?.toInt() == 0)) {
-          await doc.reference.update({'is_default': 1});
+      if (_isEditing) {
+        final current = _initialAddress;
+        if (current == null) {
+          throw Exception('ไม่พบข้อมูลที่อยู่นี้');
         }
+
+        final shouldSetDefault = _setAsDefault || isOnlyAddress;
+        if (shouldSetDefault) {
+          for (final doc in existingSnapshot.docs
+              .where((element) => element.id != current.id)) {
+            await doc.reference.update({'is_default': 1});
+          }
+        }
+
+        final now = FieldValue.serverTimestamp();
+        final data = <String, dynamic>{
+          'addr_id': current.id,
+          'uid': uid,
+          'label': _labelController.text.trim(),
+          'fullAddress': _buildFullAddress(),
+          'province': _selectedProvince?.nameTh,
+          'provinceId': _selectedProvince?.id,
+          'district': _selectedDistrict?.nameTh,
+          'districtId': _selectedDistrict?.id,
+          'subDistrict': _selectedSubDistrict?.nameTh,
+          'subDistrictId': _selectedSubDistrict?.id,
+          'postalCode': _postalCodeController.text.trim(),
+          'addressNumber': _addressNumberController.text.trim(),
+          'lat': latLng.latitude,
+          'lng': latLng.longitude,
+          'is_default': shouldSetDefault ? 0 : 1,
+          'update_at': now,
+        };
+
+        await collection.doc(current.id).update(data);
+      } else {
+        final shouldSetDefault =
+            _setAsDefault || existingSnapshot.docs.isEmpty;
+
+        final docRef = collection.doc();
+        final now = FieldValue.serverTimestamp();
+
+        if (_setAsDefault) {
+          for (final doc in existingSnapshot.docs
+              .where((element) =>
+                  (element.data()['is_default'] as num?)?.toInt() == 0)) {
+            await doc.reference.update({'is_default': 1});
+          }
+        }
+
+        final newAddress = <String, dynamic>{
+          'addr_id': docRef.id,
+          'uid': uid,
+          'label': _labelController.text.trim(),
+          'fullAddress': _buildFullAddress(),
+          'province': _selectedProvince?.nameTh,
+          'provinceId': _selectedProvince?.id,
+          'district': _selectedDistrict?.nameTh,
+          'districtId': _selectedDistrict?.id,
+          'subDistrict': _selectedSubDistrict?.nameTh,
+          'subDistrictId': _selectedSubDistrict?.id,
+          'postalCode': _postalCodeController.text.trim(),
+          'addressNumber': _addressNumberController.text.trim(),
+          'lat': latLng.latitude,
+          'lng': latLng.longitude,
+          'is_default': shouldSetDefault ? 0 : 1,
+          'create_at': now,
+          'update_at': now,
+        };
+
+        await docRef.set(newAddress);
       }
-
-      final newAddress = <String, dynamic>{
-        'addr_id': docRef.id,
-        'uid': uid,
-        'label': _labelController.text.trim(),
-        'fullAddress': _buildFullAddress(),
-        'province': _selectedProvince?.nameTh,
-        'district': _selectedDistrict?.nameTh,
-        'subDistrict': _selectedSubDistrict?.nameTh,
-        'postalCode': _postalCodeController.text.trim(),
-        'lat': latLng.latitude,
-        'lng': latLng.longitude,
-        'is_default': shouldSetDefault ? 0 : 1,
-        'create_at': now,
-        'update_at': now,
-      };
-
-      await docRef.set(newAddress);
 
       if (!mounted) return;
 
       await showSuccessDialog(
         context,
         title: 'สำเร็จ!',
-        message: 'บันทึกที่อยู่เรียบร้อยแล้ว 🎉',
+        message: _isEditing
+            ? 'บันทึกการเปลี่ยนแปลงเรียบร้อยแล้ว 🎉'
+            : 'บันทึกที่อยู่เรียบร้อยแล้ว 🎉',
       );
       if (mounted) {
         context.pop(true);
@@ -800,17 +1012,13 @@ class _AddNewAddressState extends State<AddNewAddress> {
     return name.trim();
   }
 
-  String _normalize(String? value) {
-    if (value == null) {
-      return '';
-    }
-    return value
-        .toLowerCase()
+  String _normalize(String? input) {
+    return (input ?? '')
         .replaceAll(' ', '')
-        .replaceAll('จังหวัด', '')
-        .replaceAll('เขต', '')
-        .replaceAll('อำเภอ', '')
-        .replaceAll('ตำบล', '')
-        .replaceAll('แขวง', '');
+        .replaceAll('-', '')
+        .replaceAll('จ\.', '')
+        .replaceAll('อ\.', '')
+        .replaceAll('ต\.', '')
+        .toLowerCase();
   }
 }

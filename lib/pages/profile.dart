@@ -1,5 +1,7 @@
+import 'package:bootstrap_icons/bootstrap_icons.dart';
 import 'package:delivery_app/components/custom_dialog.dart';
 import 'package:delivery_app/models/user.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -15,6 +17,7 @@ class ProfilePage extends StatefulWidget {
 class _ProfilePageState extends State<ProfilePage> {
   static const Color green = Color(0xFF16A34A);
   late Users _profile;
+  bool _isLoggingOut = false;
 
   @override
   void initState() {
@@ -81,7 +84,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   const SizedBox(height: 25),
 
                   _buildMenu(
-                    Icons.person_outline,
+                    BootstrapIcons.person,
                     'แก้ไขข้อมูลส่วนตัว',
                     onTap: () async {
                       final updated = await context.pushNamed(
@@ -101,7 +104,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     },
                   ),
                   _buildMenu(
-                    Icons.lock_outline,
+                    BootstrapIcons.shield_lock,
                     'จัดการรหัสผ่าน',
                     onTap: () {
                       context.pushNamed(
@@ -112,7 +115,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     },
                   ),
                   _buildMenu(
-                    Icons.location_on_outlined,
+                    BootstrapIcons.geo_alt,
                     'ที่อยู่',
                     onTap: () {
                       final uid = widget.uid ?? _profile.uid;
@@ -127,9 +130,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton(
-                      onPressed: () {
-                        print('ออกจากระบบ');
-                      },
+                      onPressed: _isLoggingOut ? null : _logout,
                       style: FilledButton.styleFrom(
                         backgroundColor: green,
                         shape: RoundedRectangleBorder(
@@ -137,14 +138,24 @@ class _ProfilePageState extends State<ProfilePage> {
                         ),
                         padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
-                      child: const Text(
-                        'ออกจากระบบ',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 17,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
+                      child: _isLoggingOut
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 3,
+                                valueColor:
+                                    AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
+                            )
+                          : const Text(
+                              'ออกจากระบบ',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 17,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                     ),
                   ),
                 ],
@@ -207,12 +218,44 @@ class _ProfilePageState extends State<ProfilePage> {
                   ),
                 ],
               ),
-              const Icon(Icons.chevron_right, color: Colors.black87),
+              const Icon(BootstrapIcons.chevron_right, color: Colors.black87),
             ],
           ),
         ),
       ),
     );
+  }
+
+  Future<void> _logout() async {
+    setState(() {
+      _isLoggingOut = true;
+    });
+
+    try {
+      await FirebaseAuth.instance.signOut();
+      if (!mounted) return;
+
+      await showSuccessDialog(
+        context,
+        message: 'ออกจากระบบสำเร็จ',
+      );
+
+      if (!mounted) return;
+      context.go('/');
+    } catch (e) {
+      if (!mounted) return;
+      await showErrorDialog(
+        context,
+        title: 'ออกจากระบบไม่สำเร็จ',
+        message: e.toString(),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoggingOut = false;
+        });
+      }
+    }
   }
 
   ImageProvider _buildAvatarImage() {
