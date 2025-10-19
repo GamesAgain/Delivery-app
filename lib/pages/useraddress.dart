@@ -31,6 +31,8 @@ class _UserAddressPageState extends State<UserAddressPage> {
     return FirebaseFirestore.instance
         .collection('addresses')
         .where('uid', isEqualTo: uid)
+        .orderBy('is_default', descending: true)
+        .orderBy('create_at', descending: true)
         .snapshots();
   }
 
