@@ -1,5 +1,3 @@
-import 'dart:developer';
-
 import 'package:bootstrap_icons/bootstrap_icons.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:delivery_app/models/address.dart';
@@ -16,7 +14,7 @@ class UserAddressPage extends StatefulWidget {
 }
 
 class _UserAddressPageState extends State<UserAddressPage> {
-  late Stream<List<Address>> _addressStream;
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _addressStream;
 
   @override
   void initState() {
@@ -24,51 +22,16 @@ class _UserAddressPageState extends State<UserAddressPage> {
     _addressStream = _buildAddressStream();
   }
 
-  @override
-  void didUpdateWidget(covariant UserAddressPage oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.uid != widget.uid) {
-      _addressStream = _buildAddressStream();
-    }
-  }
-
-  Stream<List<Address>> _buildAddressStream() {
+  Stream<QuerySnapshot<Map<String, dynamic>>> _buildAddressStream() {
     final uid = widget.uid;
     if (uid == null || uid.isEmpty) {
-      return const Stream<List<Address>>.value(<Address>[]);
+      return Stream<QuerySnapshot<Map<String, dynamic>>>.empty();
     }
 
     return FirebaseFirestore.instance
         .collection('addresses')
         .where('uid', isEqualTo: uid)
-        .snapshots()
-        .map((snapshot) {
-      final addresses =
-          snapshot.docs.map(Address.fromFirestore).toList(growable: true)
-            ..sort((a, b) {
-              final defaultCompare = a.isDefault.compareTo(b.isDefault);
-              if (defaultCompare != 0) {
-                return defaultCompare;
-              }
-
-              final aCreated = a.createdAt?.toDate();
-              final bCreated = b.createdAt?.toDate();
-
-              if (aCreated == null && bCreated == null) {
-                return 0;
-              }
-              if (aCreated == null) {
-                return 1;
-              }
-              if (bCreated == null) {
-                return -1;
-              }
-
-              return bCreated.compareTo(aCreated);
-            });
-
-      return addresses;
-    });
+        .snapshots();
   }
 
   @override
@@ -101,26 +64,18 @@ class _UserAddressPageState extends State<UserAddressPage> {
         child: Column(
           children: [
             Expanded(
-              child: StreamBuilder<List<Address>>(
+              child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                 stream: _addressStream,
                 builder: (context, snapshot) {
+                  if (widget.uid == null || widget.uid!.isEmpty) {
+                    return _buildEmptyState(context);
+                  }
+
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator());
                   }
 
                   if (snapshot.hasError) {
-                    log(
-                      'เกิดข้อผิดพลาดในการโหลดที่อยู่',
-                      error: snapshot.error,
-                      stackTrace: snapshot.stackTrace,
-                    );
-
-                    final fallbackAddresses = snapshot.data;
-                    if (fallbackAddresses != null &&
-                        fallbackAddresses.isNotEmpty) {
-                      return _AddressListView(addresses: fallbackAddresses);
-                    }
-
                     return Center(
                       child: Text(
                         'เกิดข้อผิดพลาดในการโหลดข้อมูล',
@@ -132,13 +87,44 @@ class _UserAddressPageState extends State<UserAddressPage> {
                     );
                   }
 
-                  final addresses = snapshot.data ?? const <Address>[];
-
-                  if (addresses.isEmpty) {
+                  final docs = snapshot.data?.docs ?? [];
+                  if (docs.isEmpty) {
                     return _buildEmptyState(context);
                   }
 
-                  return _AddressListView(addresses: addresses);
+                  final addresses =
+                      docs.map(Address.fromFirestore).toList(growable: true)
+                        ..sort((a, b) {
+                          final defaultCompare = a.isDefault.compareTo(b.isDefault);
+                          if (defaultCompare != 0) {
+                            return defaultCompare;
+                          }
+
+                          final aCreated = a.createdAt?.toDate();
+                          final bCreated = b.createdAt?.toDate();
+
+                          if (aCreated == null && bCreated == null) {
+                            return 0;
+                          }
+                          if (aCreated == null) {
+                            return 1;
+                          }
+                          if (bCreated == null) {
+                            return -1;
+                          }
+
+                          return bCreated.compareTo(aCreated);
+                        });
+
+                  return ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
+                    itemCount: addresses.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 12),
+                    itemBuilder: (context, index) {
+                      final address = addresses[index];
+                      return _AddressTile(address: address);
+                    },
+                  );
                 },
               ),
             ),
@@ -204,25 +190,6 @@ class _UserAddressPageState extends State<UserAddressPage> {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _AddressListView extends StatelessWidget {
-  const _AddressListView({required this.addresses});
-
-  final List<Address> addresses;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
-      itemCount: addresses.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 12),
-      itemBuilder: (context, index) {
-        final address = addresses[index];
-        return _AddressTile(address: address);
-      },
     );
   }
 }
