@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:bootstrap_icons/bootstrap_icons.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:collection/collection.dart';
 import 'package:delivery_app/components/custom_dialog.dart';
 import 'package:delivery_app/models/address.dart';
 import 'package:delivery_app/models/thai_address.dart';
@@ -140,38 +141,14 @@ class _AddressFormPageState extends State<AddressFormPage> {
     }
 
     final provinceName = _sanitizeName(extra['province'] ?? extra['state']);
-    if (provinceName != null) {
-      final province = _provinces.firstWhere(
-        (element) =>
-            _normalize(element.nameTh) == _normalize(provinceName) ||
-            _normalize(element.nameEn) == _normalize(provinceName),
-        orElse: () => _provinces.first,
-      );
-      await _onProvinceChanged(province, fromAutoFill: true);
-    }
-
-    final districtName = _sanitizeName(extra['district'] ?? extra['county']);
-    if (districtName != null && _districts.isNotEmpty) {
-      final district = _districts.firstWhere(
-        (element) =>
-            _normalize(element.nameTh) == _normalize(districtName) ||
-            _normalize(element.nameEn) == _normalize(districtName),
-        orElse: () => _districts.first,
-      );
-      await _onDistrictChanged(district, fromAutoFill: true);
-    }
-
+    final districtName =
+        _sanitizeName(extra['district'] ?? extra['county']);
     final subDistrictName =
         _sanitizeName(extra['subDistrict'] ?? extra['subdistrict']);
-    if (subDistrictName != null && _subDistricts.isNotEmpty) {
-      final subDistrict = _subDistricts.firstWhere(
-        (element) =>
-            _normalize(element.nameTh) == _normalize(subDistrictName) ||
-            _normalize(element.nameEn) == _normalize(subDistrictName),
-        orElse: () => _subDistricts.first,
-      );
-      _onSubDistrictChanged(subDistrict);
-    }
+
+    await _selectProvinceByName(provinceName, fromAutoFill: true);
+    await _selectDistrictByName(districtName, fromAutoFill: true);
+    await _selectSubDistrictByName(subDistrictName);
 
     final postal = (extra['postalCode'] as String?) ??
         (extra['postcode'] as String?) ??
@@ -678,16 +655,6 @@ class _AddressFormPageState extends State<AddressFormPage> {
         'state_district',
       ]),
     );
-    if (provinceName != null && _provinces.isNotEmpty) {
-      final province = _provinces.firstWhere(
-        (element) =>
-            _normalize(element.nameTh) == _normalize(provinceName) ||
-            _normalize(element.nameEn) == _normalize(provinceName),
-        orElse: () => _provinces.first,
-      );
-      await _onProvinceChanged(province, fromAutoFill: true);
-    }
-
     final districtName = _sanitizeName(
       _firstNonEmpty(components, const [
         'county',
@@ -699,16 +666,6 @@ class _AddressFormPageState extends State<AddressFormPage> {
         'state_district',
       ]),
     );
-    if (districtName != null && _selectedProvince != null && _districts.isNotEmpty) {
-      final match = _districts.firstWhere(
-        (element) =>
-            _normalize(element.nameTh) == _normalize(districtName) ||
-            _normalize(element.nameEn) == _normalize(districtName),
-        orElse: () => _districts.first,
-      );
-      await _onDistrictChanged(match, fromAutoFill: true);
-    }
-
     final subDistrictName = _sanitizeName(
       _firstNonEmpty(components, const [
         'suburb',
@@ -721,17 +678,10 @@ class _AddressFormPageState extends State<AddressFormPage> {
         'hamlet',
       ]),
     );
-    if (subDistrictName != null &&
-        _selectedDistrict != null &&
-        _subDistricts.isNotEmpty) {
-      final match = _subDistricts.firstWhere(
-        (element) =>
-            _normalize(element.nameTh) == _normalize(subDistrictName) ||
-            _normalize(element.nameEn) == _normalize(subDistrictName),
-        orElse: () => _subDistricts.first,
-      );
-      _onSubDistrictChanged(match);
-    }
+
+    await _selectProvinceByName(provinceName, fromAutoFill: true);
+    await _selectDistrictByName(districtName, fromAutoFill: true);
+    await _selectSubDistrictByName(subDistrictName);
 
     final postalCode = _firstNonEmpty(components, const ['postcode', 'postal_code']);
     if (postalCode != null && postalCode.length == 5) {
@@ -759,6 +709,85 @@ class _AddressFormPageState extends State<AddressFormPage> {
     }
 
     setState(() {});
+  }
+
+  Future<Province?> _selectProvinceByName(String? name,
+      {bool fromAutoFill = false}) async {
+    if (name == null || name.isEmpty || _provinces.isEmpty) {
+      return null;
+    }
+
+    final normalized = _normalize(name);
+    final match = _provinces.firstWhereOrNull(
+      (element) =>
+          _normalize(element.nameTh) == normalized ||
+          _normalize(element.nameEn) == normalized,
+    );
+
+    if (match == null) {
+      return null;
+    }
+
+    final shouldReload =
+        _selectedProvince?.id != match.id || _districts.isEmpty;
+    if (shouldReload) {
+      await _onProvinceChanged(match, fromAutoFill: fromAutoFill);
+    }
+
+    return match;
+  }
+
+  Future<District?> _selectDistrictByName(String? name,
+      {bool fromAutoFill = false}) async {
+    if (name == null || name.isEmpty ||
+        _selectedProvince == null ||
+        _districts.isEmpty) {
+      return null;
+    }
+
+    final normalized = _normalize(name);
+    final match = _districts.firstWhereOrNull(
+      (element) =>
+          _normalize(element.nameTh) == normalized ||
+          _normalize(element.nameEn) == normalized,
+    );
+
+    if (match == null) {
+      return null;
+    }
+
+    final shouldReload =
+        _selectedDistrict?.id != match.id || _subDistricts.isEmpty;
+    if (shouldReload) {
+      await _onDistrictChanged(match, fromAutoFill: fromAutoFill);
+    }
+
+    return match;
+  }
+
+  Future<SubDistrict?> _selectSubDistrictByName(String? name) async {
+    if (name == null || name.isEmpty ||
+        _selectedDistrict == null ||
+        _subDistricts.isEmpty) {
+      return null;
+    }
+
+    final normalized = _normalize(name);
+    final match = _subDistricts.firstWhereOrNull(
+      (element) =>
+          _normalize(element.nameTh) == normalized ||
+          _normalize(element.nameEn) == normalized,
+    );
+
+    if (match == null) {
+      return null;
+    }
+
+    if (_selectedSubDistrict?.id != match.id) {
+      _onSubDistrictChanged(match);
+    }
+
+    return match;
   }
 
   Future<void> _onProvinceChanged(Province province,
@@ -1053,6 +1082,18 @@ class _AddressFormPageState extends State<AddressFormPage> {
       name = name.replaceFirst(pattern, '');
     }
 
+    final suffixPatterns = <RegExp>[
+      RegExp(r'\s+(Province|Prov\.|Chang\s*Wat)$', caseSensitive: false),
+      RegExp(r'\s+(District|Dist\.|County|City)$', caseSensitive: false),
+      RegExp(r'\s+(Sub[-\s]*district|Subdistrict|Tambon|Khwaeng)$',
+          caseSensitive: false),
+      RegExp(r'\s+(Municipality|Borough|Township)$', caseSensitive: false),
+    ];
+
+    for (final pattern in suffixPatterns) {
+      name = name.replaceAll(pattern, '');
+    }
+
     name = name.replaceAll(RegExp(r'\s+'), ' ');
     return name.trim();
   }
@@ -1064,6 +1105,20 @@ class _AddressFormPageState extends State<AddressFormPage> {
         .replaceAll('จ\.', '')
         .replaceAll('อ\.', '')
         .replaceAll('ต\.', '')
+        .replaceFirst(RegExp(r'^mueang'), '')
+        .replaceFirst(RegExp(r'^muang'), '')
+        .replaceAll('district', '')
+        .replaceAll('province', '')
+        .replaceAll('subdistrict', '')
+        .replaceAll('tambon', '')
+        .replaceAll('khwaeng', '')
+        .replaceAll('amphoe', '')
+        .replaceAll('kingamphoe', '')
+        .replaceAll('amphur', '')
+        .replaceAll('city', '')
+        .replaceAll('county', '')
+        .replaceAll('municipality', '')
+        .replaceAll('borough', '')
         .toLowerCase();
   }
 
