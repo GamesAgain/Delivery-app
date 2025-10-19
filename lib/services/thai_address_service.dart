@@ -1,5 +1,7 @@
-import 'package:dio/dio.dart';
+import 'dart:convert';
+
 import 'package:delivery_app/models/thai_address.dart';
+import 'package:dio/dio.dart';
 
 class ThaiAddressService {
   ThaiAddressService({
@@ -80,16 +82,38 @@ class ThaiAddressService {
   }
 
   List<dynamic> _validateResponseBody(Response<dynamic> response) {
-    final dynamic body = response.data;
+    dynamic body = response.data;
+
+    if (body is String) {
+      if (body.trim().isEmpty) {
+        throw DioException(
+          requestOptions: response.requestOptions,
+          response: response,
+          error: 'ไม่พบข้อมูลจังหวัด/อำเภอ/ตำบล',
+        );
+      }
+      try {
+        body = jsonDecode(body);
+      } on FormatException catch (error) {
+        throw DioException(
+          requestOptions: response.requestOptions,
+          response: response,
+          error:
+              'รูปแบบข้อมูลจังหวัด/อำเภอ/ตำบลไม่ถูกต้อง: ${error.message}',
+        );
+      }
+    }
 
     if (body is List) {
       return body;
     }
 
     if (body is Map<String, dynamic>) {
-      final dynamic data = body['data'];
-      if (data is List) {
-        return data;
+      for (final key in const ['data', 'results', 'items']) {
+        final dynamic data = body[key];
+        if (data is List) {
+          return data;
+        }
       }
     }
 
