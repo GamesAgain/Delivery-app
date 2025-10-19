@@ -154,6 +154,28 @@ void main() {
         throwsA(isA<DioException>()),
       );
     });
+
+    test('parses JSON payload when response body is plain text', () async {
+      final adapter = _MockHttpClientAdapter({
+        Uri.parse(provinceUrl): _RawResponse(
+          '[{"id":1,"name_th":"กรุงเทพมหานคร","name_en":"Bangkok"}]',
+          headers: {Headers.contentTypeHeader: ['text/plain']},
+        ),
+      });
+      final dio = Dio()..httpClientAdapter = adapter;
+      final service = ThaiAddressService(
+        dio: dio,
+        provinceUrl: provinceUrl,
+        districtUrl: districtUrl,
+        subDistrictUrl: subDistrictUrl,
+      );
+
+      final provinces = await service.getProvinces();
+
+      expect(provinces, hasLength(1));
+      expect(provinces.first.nameEn, 'Bangkok');
+      expect(adapter.callCounts[Uri.parse(provinceUrl)], 1);
+    });
   });
 }
 
@@ -178,13 +200,30 @@ class _MockHttpClientAdapter implements HttpClientAdapter {
       throw StateError('No mock response registered for $uri');
     }
 
-    final body = jsonEncode(_responses[uri]);
+    final response = _responses[uri];
+    late final String body;
+    Map<String, List<String>> headers = {
+      Headers.contentTypeHeader: [Headers.jsonContentType],
+    };
+    if (response is _RawResponse) {
+      body = response.body;
+      headers = response.headers;
+    } else {
+      body = jsonEncode(response);
+    }
     return ResponseBody.fromString(
       body,
       200,
-      headers: {
-        Headers.contentTypeHeader: [Headers.jsonContentType],
-      },
+      headers: headers,
     );
   }
+}
+
+class _RawResponse {
+  _RawResponse(this.body, {Map<String, List<String>>? headers})
+      : headers = headers ??
+            {Headers.contentTypeHeader: [Headers.jsonContentType]};
+
+  final String body;
+  final Map<String, List<String>> headers;
 }
