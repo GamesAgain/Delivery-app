@@ -279,6 +279,23 @@ class _AddressTile extends StatelessWidget {
               ),
             ],
           ),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: () {
+                context.pushNamed('editAddress', extra: address);
+              },
+              icon: const Icon(
+                BootstrapIcons.pencil_square,
+                size: 16,
+              ),
+              label: const Text('แก้ไขที่อยู่'),
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFF16A34A),
+              ),
+            ),
+          ),
           if (address.lat != null && address.lng != null) ...[
             const SizedBox(height: 12),
             Row(
