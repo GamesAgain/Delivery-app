@@ -2,23 +2,33 @@ import 'package:dio/dio.dart';
 import 'package:delivery_app/models/thai_address.dart';
 
 class ThaiAddressService {
-  ThaiAddressService({Dio? dio})
-      : _dio = dio ?? Dio(BaseOptions(headers: _defaultHeaders));
+  ThaiAddressService({
+    Dio? dio,
+    String? provinceUrl,
+    String? districtUrl,
+    String? subDistrictUrl,
+  })  : _dio = dio ?? Dio(BaseOptions(headers: _defaultHeaders)),
+        _provinceUrl = provinceUrl ?? _defaultProvinceUrl,
+        _districtUrl = districtUrl ?? _defaultDistrictUrl,
+        _subDistrictUrl = subDistrictUrl ?? _defaultSubDistrictUrl;
 
   static const _defaultHeaders = <String, dynamic>{
     'User-Agent': 'DeliveryApp/1.0 (https://github.com)',
   };
 
   final Dio _dio;
+  final String _provinceUrl;
+  final String _districtUrl;
+  final String _subDistrictUrl;
   List<Province>? _cachedProvinces;
   List<District>? _cachedDistricts;
   List<SubDistrict>? _cachedSubDistricts;
 
-  static const _provinceUrl =
+  static const _defaultProvinceUrl =
       'https://raw.githubusercontent.com/kongvut/thai-province-data/refs/heads/master/api/latest/province.json';
-  static const _districtUrl =
+  static const _defaultDistrictUrl =
       'https://raw.githubusercontent.com/kongvut/thai-province-data/refs/heads/master/api/latest/district.json';
-  static const _subDistrictUrl =
+  static const _defaultSubDistrictUrl =
       'https://raw.githubusercontent.com/kongvut/thai-province-data/refs/heads/master/api/latest/sub_district.json';
 
   Future<List<Province>> getProvinces() async {
