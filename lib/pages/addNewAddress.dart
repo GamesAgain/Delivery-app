@@ -652,15 +652,17 @@ class _AddressFormPageState extends State<AddressFormPage> {
     await _initialDataFuture;
 
     final labelCandidate = _sanitizeName(
-      components['name'] ??
-          components['house'] ??
-          components['building'] ??
-          components['amenity'] ??
-          components['shop'] ??
-          components['tourism'] ??
-          components['office'] ??
-          components['neighbourhood'] ??
-          components['suburb'],
+      _firstNonEmpty(components, const [
+        'name',
+        'house',
+        'building',
+        'amenity',
+        'shop',
+        'tourism',
+        'office',
+        'neighbourhood',
+        'suburb',
+      ]),
     );
     if (labelCandidate != null &&
         labelCandidate.isNotEmpty &&
@@ -669,7 +671,12 @@ class _AddressFormPageState extends State<AddressFormPage> {
     }
 
     final provinceName = _sanitizeName(
-      components['state'] ?? components['province'] ?? components['region'],
+      _firstNonEmpty(components, const [
+        'state',
+        'province',
+        'region',
+        'state_district',
+      ]),
     );
     if (provinceName != null && _provinces.isNotEmpty) {
       final province = _provinces.firstWhere(
@@ -682,10 +689,15 @@ class _AddressFormPageState extends State<AddressFormPage> {
     }
 
     final districtName = _sanitizeName(
-      components['county'] ??
-          components['district'] ??
-          components['city'] ??
-          components['municipality'],
+      _firstNonEmpty(components, const [
+        'county',
+        'district',
+        'city_district',
+        'city',
+        'municipality',
+        'borough',
+        'state_district',
+      ]),
     );
     if (districtName != null && _selectedProvince != null && _districts.isNotEmpty) {
       final match = _districts.firstWhere(
@@ -698,11 +710,16 @@ class _AddressFormPageState extends State<AddressFormPage> {
     }
 
     final subDistrictName = _sanitizeName(
-      components['suburb'] ??
-          components['town'] ??
-          components['village'] ??
-          components['subdistrict'] ??
-          components['neighbourhood'],
+      _firstNonEmpty(components, const [
+        'suburb',
+        'town',
+        'village',
+        'subdistrict',
+        'sub_district',
+        'neighbourhood',
+        'quarter',
+        'hamlet',
+      ]),
     );
     if (subDistrictName != null &&
         _selectedDistrict != null &&
@@ -716,14 +733,24 @@ class _AddressFormPageState extends State<AddressFormPage> {
       _onSubDistrictChanged(match);
     }
 
-    final postalCode = components['postcode'] as String?;
+    final postalCode = _firstNonEmpty(components, const ['postcode', 'postal_code']);
     if (postalCode != null && postalCode.length == 5) {
       _postalCodeController.text = postalCode;
     }
 
-    final houseNumber = components['house_number'] as String?;
-    final road = components['road'] as String?;
-    final neighbourhood = components['residential'] as String?;
+    final houseNumber = _firstNonEmpty(components, const [
+      'house_number',
+      'house',
+      'building',
+    ]);
+    final road = _firstNonEmpty(components, const ['road', 'street', 'highway']);
+    final neighbourhood = _firstNonEmpty(components, const [
+      'residential',
+      'neighbourhood',
+      'hamlet',
+      'quarter',
+      'suburb',
+    ]);
     final line = [houseNumber, road, neighbourhood]
         .where((element) => element != null && element.toString().isNotEmpty)
         .join(' ');
@@ -999,16 +1026,34 @@ class _AddressFormPageState extends State<AddressFormPage> {
 
   String? _sanitizeName(dynamic value) {
     if (value == null) return null;
-    var name = value.toString();
-    name = name.replaceAll(RegExp(r'^จังหวัด'), '');
-    name = name.replaceAll(RegExp(r'^เขต'), '');
-    name = name.replaceAll(RegExp(r'^อำเภอ'), '');
-    name = name.replaceAll(RegExp(r'^เทศบาล'), '');
-    name = name.replaceAll(RegExp(r'^ตำบล'), '');
-    name = name.replaceAll(RegExp(r'^แขวง'), '');
-    name = name.replaceAll(RegExp(r'^ต\.'), '');
-    name = name.replaceAll(RegExp(r'^อ\.'), '');
-    name = name.replaceAll(RegExp(r'^จ\.'), '');
+    var name = value.toString().trim();
+    if (name.isEmpty) return null;
+
+    final patterns = <RegExp>[
+      RegExp(r'^จังหวัด'),
+      RegExp(r'^เขต'),
+      RegExp(r'^อำเภอ'),
+      RegExp(r'^เทศบาล'),
+      RegExp(r'^ตำบล'),
+      RegExp(r'^แขวง'),
+      RegExp(r'^ต\.'),
+      RegExp(r'^อ\.'),
+      RegExp(r'^จ\.'),
+      RegExp(r'^(Chang\s*Wat)\s+', caseSensitive: false),
+      RegExp(r'^(Province|Prov\.)\s+', caseSensitive: false),
+      RegExp(r'^(Amphoe|King\s*Amphoe|Amphur)\s+', caseSensitive: false),
+      RegExp(r'^(District|Dist\.)\s+', caseSensitive: false),
+      RegExp(r'^(Tambon|Sub[-\s]*district|Subdistrict|Khwaeng)\s+',
+          caseSensitive: false),
+      RegExp(r'^(Mueang|Muang)\s+', caseSensitive: false),
+      RegExp(r'^(City\s*of)\s+', caseSensitive: false),
+    ];
+
+    for (final pattern in patterns) {
+      name = name.replaceFirst(pattern, '');
+    }
+
+    name = name.replaceAll(RegExp(r'\s+'), ' ');
     return name.trim();
   }
 
@@ -1020,5 +1065,21 @@ class _AddressFormPageState extends State<AddressFormPage> {
         .replaceAll('อ\.', '')
         .replaceAll('ต\.', '')
         .toLowerCase();
+  }
+
+  String? _firstNonEmpty(
+    Map<String, dynamic> components,
+    List<String> candidates,
+  ) {
+    for (final key in candidates) {
+      final value = components[key];
+      if (value is String) {
+        final trimmed = value.trim();
+        if (trimmed.isNotEmpty) {
+          return trimmed;
+        }
+      }
+    }
+    return null;
   }
 }
