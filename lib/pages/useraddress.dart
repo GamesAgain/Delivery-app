@@ -31,8 +31,6 @@ class _UserAddressPageState extends State<UserAddressPage> {
     return FirebaseFirestore.instance
         .collection('addresses')
         .where('uid', isEqualTo: uid)
-        .orderBy('is_default')
-        .orderBy('create_at', descending: true)
         .snapshots();
   }
 
@@ -95,7 +93,28 @@ class _UserAddressPageState extends State<UserAddressPage> {
                   }
 
                   final addresses =
-                      docs.map(Address.fromFirestore).toList(growable: false);
+                      docs.map(Address.fromFirestore).toList(growable: true)
+                        ..sort((a, b) {
+                          final defaultCompare = a.isDefault.compareTo(b.isDefault);
+                          if (defaultCompare != 0) {
+                            return defaultCompare;
+                          }
+
+                          final aCreated = a.createdAt?.toDate();
+                          final bCreated = b.createdAt?.toDate();
+
+                          if (aCreated == null && bCreated == null) {
+                            return 0;
+                          }
+                          if (aCreated == null) {
+                            return 1;
+                          }
+                          if (bCreated == null) {
+                            return -1;
+                          }
+
+                          return bCreated.compareTo(aCreated);
+                        });
 
                   return ListView.separated(
                     padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
