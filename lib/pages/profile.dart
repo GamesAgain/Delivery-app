@@ -238,10 +238,11 @@ class _ProfilePageState extends State<ProfilePage> {
       await showSuccessDialog(
         context,
         message: 'ออกจากระบบสำเร็จ',
+        onOk: () {
+          if (!mounted) return;
+          context.go('/');
+        },
       );
-
-      if (!mounted) return;
-      context.go('/');
     } catch (e) {
       if (!mounted) return;
       await showErrorDialog(
