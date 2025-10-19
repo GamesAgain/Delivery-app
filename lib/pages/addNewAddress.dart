@@ -291,103 +291,148 @@ class _AddNewAddressState extends State<AddNewAddress> {
   }
 
   Widget _buildProvinceDropdown() {
-    return DropdownButtonFormField<Province>(
-      value: _selectedProvince,
-      isExpanded: true,
-      decoration: _dropdownDecoration('จังหวัด'),
-      items: _provinces
-          .map(
-            (province) => DropdownMenuItem<Province>(
-              value: province,
-              child: Text(province.nameTh, overflow: TextOverflow.ellipsis),
-            ),
-          )
-          .toList(),
-      onChanged: (value) {
-        if (value == null) return;
-        _onProvinceChanged(value);
-      },
-      validator: (_) {
-        if (_selectedProvince == null) {
-          return 'กรุณาเลือกจังหวัด';
-        }
-        return null;
-      },
+    return _buildLabeledField(
+      label: 'จังหวัด',
+      child: DropdownButtonFormField<Province>(
+        value: _selectedProvince,
+        isExpanded: true,
+        decoration: _fieldDecoration(),
+        hint: const Text(
+          'เลือกจังหวัด',
+          style: TextStyle(color: Color(0xFF848484)),
+        ),
+        items: _provinces
+            .map(
+              (province) => DropdownMenuItem<Province>(
+                value: province,
+                child:
+                    Text(province.nameTh, overflow: TextOverflow.ellipsis),
+              ),
+            )
+            .toList(),
+        onChanged: (value) {
+          if (value == null) return;
+          _onProvinceChanged(value);
+        },
+        validator: (_) {
+          if (_selectedProvince == null) {
+            return 'กรุณาเลือกจังหวัด';
+          }
+          return null;
+        },
+      ),
     );
   }
 
   Widget _buildDistrictDropdown() {
-    return DropdownButtonFormField<District>(
-      value: _selectedDistrict,
-      isExpanded: true,
-      decoration: _dropdownDecoration('อำเภอ'),
-      items: _districts
-          .map(
-            (district) => DropdownMenuItem<District>(
-              value: district,
-              child: Text(district.nameTh, overflow: TextOverflow.ellipsis),
-            ),
-          )
-          .toList(),
-      onChanged: _districts.isEmpty
-          ? null
-          : (value) {
-              if (value == null) return;
-              _onDistrictChanged(value);
-            },
-      validator: (_) {
-        if (_selectedProvince == null) {
-          return 'กรุณาเลือกจังหวัดก่อน';
-        }
-        if (_selectedDistrict == null) {
-          return _districtError ?? 'กรุณาเลือกอำเภอ';
-        }
-        return null;
-      },
-      disabledHint: _loadingDistricts
-          ? const Text('กำลังโหลดอำเภอ...', style: TextStyle(color: Colors.white54))
-          : const Text('เลือกจังหวัดก่อน', style: TextStyle(color: Colors.white54)),
+    return _buildLabeledField(
+      label: 'อำเภอ',
+      child: DropdownButtonFormField<District>(
+        value: _selectedDistrict,
+        isExpanded: true,
+        decoration: _fieldDecoration(),
+        hint: const Text(
+          'เลือกอำเภอ',
+          style: TextStyle(color: Color(0xFF848484)),
+        ),
+        items: _districts
+            .map(
+              (district) => DropdownMenuItem<District>(
+                value: district,
+                child:
+                    Text(district.nameTh, overflow: TextOverflow.ellipsis),
+              ),
+            )
+            .toList(),
+        onChanged: _districts.isEmpty
+            ? null
+            : (value) {
+                if (value == null) return;
+                _onDistrictChanged(value);
+              },
+        validator: (_) {
+          if (_selectedProvince == null) {
+            return 'กรุณาเลือกจังหวัดก่อน';
+          }
+          if (_selectedDistrict == null) {
+            return _districtError ?? 'กรุณาเลือกอำเภอ';
+          }
+          return null;
+        },
+        disabledHint: _loadingDistricts
+            ? const Text('กำลังโหลดอำเภอ...',
+                style: TextStyle(color: Colors.white54))
+            : const Text('เลือกจังหวัดก่อน',
+                style: TextStyle(color: Colors.white54)),
+      ),
     );
   }
 
   Widget _buildSubDistrictDropdown() {
-    return DropdownButtonFormField<SubDistrict>(
-      value: _selectedSubDistrict,
-      isExpanded: true,
-      decoration: _dropdownDecoration('ตำบล'),
-      items: _subDistricts
-          .map(
-            (subDistrict) => DropdownMenuItem<SubDistrict>(
-              value: subDistrict,
-              child: Text(subDistrict.nameTh, overflow: TextOverflow.ellipsis),
-            ),
-          )
-          .toList(),
-      onChanged: _subDistricts.isEmpty
-          ? null
-          : (value) {
-              if (value == null) return;
-              _onSubDistrictChanged(value);
-            },
-      validator: (_) {
-        if (_selectedDistrict == null) {
-          return 'กรุณาเลือกอำเภอก่อน';
-        }
-        if (_selectedSubDistrict == null) {
-          return _subDistrictError ?? 'กรุณาเลือกตำบล';
-        }
-        return null;
-      },
-      disabledHint: _loadingSubDistricts
-          ? const Text('กำลังโหลดตำบล...', style: TextStyle(color: Colors.white54))
-          : const Text('เลือกอำเภอก่อน', style: TextStyle(color: Colors.white54)),
+    return _buildLabeledField(
+      label: 'ตำบล',
+      child: DropdownButtonFormField<SubDistrict>(
+        value: _selectedSubDistrict,
+        isExpanded: true,
+        decoration: _fieldDecoration(),
+        hint: const Text(
+          'เลือกตำบล',
+          style: TextStyle(color: Color(0xFF848484)),
+        ),
+        items: _subDistricts
+            .map(
+              (subDistrict) => DropdownMenuItem<SubDistrict>(
+                value: subDistrict,
+                child: Text(subDistrict.nameTh,
+                    overflow: TextOverflow.ellipsis),
+              ),
+            )
+            .toList(),
+        onChanged: _subDistricts.isEmpty
+            ? null
+            : (value) {
+                if (value == null) return;
+                _onSubDistrictChanged(value);
+              },
+        validator: (_) {
+          if (_selectedDistrict == null) {
+            return 'กรุณาเลือกอำเภอก่อน';
+          }
+          if (_selectedSubDistrict == null) {
+            return _subDistrictError ?? 'กรุณาเลือกตำบล';
+          }
+          return null;
+        },
+        disabledHint: _loadingSubDistricts
+            ? const Text('กำลังโหลดตำบล...',
+                style: TextStyle(color: Colors.white54))
+            : const Text('เลือกอำเภอก่อน',
+                style: TextStyle(color: Colors.white54)),
+      ),
     );
   }
 
-  InputDecoration _dropdownDecoration(String label) {
+  Widget _buildLabeledField({
+    required String label,
+    required Widget child,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(color: Color(0xFFBBB9B9), fontSize: 16),
+        ),
+        const SizedBox(height: 6),
+        child,
+      ],
+    );
+  }
+
+  InputDecoration _fieldDecoration({String? hintText}) {
     return InputDecoration(
-      labelText: label,
-      labelStyle: const TextStyle(color: Color(0xFFBBB9B9), fontSize: 16),
+      hintText: hintText,
+      hintStyle: const TextStyle(color: Color(0xFF848484), fontSize: 14),
       filled: true,
       fillColor: Colors.white,
       border: OutlineInputBorder(
@@ -410,38 +455,18 @@ class _AddNewAddressState extends State<AddNewAddress> {
     TextInputType? keyboardType,
     int maxLines = 1,
   }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(color: Color(0xFFBBB9B9), fontSize: 16),
+    return _buildLabeledField(
+      label: label,
+      child: TextFormField(
+        controller: controller,
+        validator: validator,
+        keyboardType: keyboardType,
+        maxLines: maxLines,
+        style: const TextStyle(color: Colors.black87),
+        decoration: _fieldDecoration(hintText: hint).copyWith(
+          alignLabelWithHint: maxLines > 1,
         ),
-        const SizedBox(height: 6),
-        TextFormField(
-          controller: controller,
-          validator: validator,
-          keyboardType: keyboardType,
-          maxLines: maxLines,
-          style: const TextStyle(color: Colors.black87),
-          decoration: InputDecoration(
-            hintText: hint,
-            hintStyle: const TextStyle(color: Color(0xFF848484), fontSize: 14),
-            filled: true,
-            fillColor: Colors.white,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: Color(0xFFC7C0C0), width: 1.2),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: Color(0xFFC7C0C0), width: 1.2),
-            ),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-          ),
-        ),
-      ],
+      ),
     );
   }
 

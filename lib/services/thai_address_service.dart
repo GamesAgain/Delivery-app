@@ -15,18 +15,18 @@ class ThaiAddressService {
   List<SubDistrict>? _cachedSubDistricts;
 
   static const _provinceUrl =
-      'https://raw.githubusercontent.com/kongvut/thai-province-data/master/api_province.json';
+      'https://raw.githubusercontent.com/kongvut/thai-province-data/main/api_province.json';
   static const _districtUrl =
-      'https://raw.githubusercontent.com/kongvut/thai-province-data/master/api_amphure.json';
+      'https://raw.githubusercontent.com/kongvut/thai-province-data/main/api_amphure.json';
   static const _subDistrictUrl =
-      'https://raw.githubusercontent.com/kongvut/thai-province-data/master/api_tambon.json';
+      'https://raw.githubusercontent.com/kongvut/thai-province-data/main/api_tambon.json';
 
   Future<List<Province>> getProvinces() async {
     if (_cachedProvinces != null) {
       return _cachedProvinces!;
     }
     final response = await _dio.get(_provinceUrl);
-    final data = response.data as List<dynamic>;
+    final data = _validateResponseBody(response);
     _cachedProvinces = data
         .map((e) =>
             Province.fromJson(Map<String, dynamic>.from(e as Map<String, dynamic>)))
@@ -53,7 +53,7 @@ class ThaiAddressService {
 
   Future<List<District>> _loadDistricts() async {
     final response = await _dio.get(_districtUrl);
-    final data = response.data as List<dynamic>;
+    final data = _validateResponseBody(response);
     return data
         .map((e) =>
             District.fromJson(Map<String, dynamic>.from(e as Map<String, dynamic>)))
@@ -62,10 +62,21 @@ class ThaiAddressService {
 
   Future<List<SubDistrict>> _loadSubDistricts() async {
     final response = await _dio.get(_subDistrictUrl);
-    final data = response.data as List<dynamic>;
+    final data = _validateResponseBody(response);
     return data
         .map((e) => SubDistrict.fromJson(
             Map<String, dynamic>.from(e as Map<String, dynamic>)))
         .toList();
+  }
+
+  List<dynamic> _validateResponseBody(Response<dynamic> response) {
+    if (response.data is! List) {
+      throw DioException(
+        requestOptions: response.requestOptions,
+        response: response,
+        error: 'รูปแบบข้อมูลจังหวัด/อำเภอ/ตำบลไม่ถูกต้อง',
+      );
+    }
+    return response.data as List<dynamic>;
   }
 }
