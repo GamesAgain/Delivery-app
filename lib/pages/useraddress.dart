@@ -1,23 +1,30 @@
-import 'dart:developer';
 import 'package:bootstrap_icons/bootstrap_icons.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:delivery_app/models/address.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 class UserAddressPage extends StatefulWidget {
-  final String? uid;
   const UserAddressPage({super.key, this.uid});
+
+  final String? uid;
 
   @override
   State<UserAddressPage> createState() => _UserAddressPageState();
 }
 
 class _UserAddressPageState extends State<UserAddressPage> {
-  List<Map<String, dynamic>> addresses = [];
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _addressStream;
+
   @override
   void initState() {
     super.initState();
-    LoadAddresses();
+    _addressStream = FirebaseFirestore.instance
+        .collection('addresses')
+        .where('uid', isEqualTo: widget.uid)
+        .orderBy('is_default')
+        .orderBy('create_at', descending: true)
+        .snapshots();
   }
 
   @override
@@ -42,101 +49,63 @@ class _UserAddressPageState extends State<UserAddressPage> {
           ),
         ),
         leading: IconButton(
-          onPressed: () {},
-          icon: Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => context.pop(),
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
         ),
       ),
-      body: Expanded(
-        child: ListView.builder(
-          padding: const EdgeInsets.all(10),
-          itemCount: addresses.length,
-          itemBuilder: (context, index) {
-            final addr = addresses[index];
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: const Color(0xFFD9D9D9).withOpacity(0.05),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: const Color(0xFF16A34A).withOpacity(0.3),
-                    width: 1,
-                  ),
-                ),
-                padding: const EdgeInsets.all(10),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Icon(
-                              BootstrapIcons.geo_alt,
-                              color: Color(0xFF16A34A),
-                              size: 25,
-                            ),
-                            const SizedBox(width: 12),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  addr['addressName'] ?? 'ไม่ระบุชื่อที่อยู่',
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                SizedBox(
-                                  width:
-                                      MediaQuery.of(context).size.width * 0.7,
-                                  child: Text(
-                                    addr['fullAddress'] ?? '-',
-                                    softWrap: true,
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      color: Colors.white70,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                        Expanded(
-                          child: IconButton(
-                            onPressed: () {
-                              print('Edit address: ${addr['addr_id']}');
-                            },
-                            icon: const Icon(
-                              BootstrapIcons.pencil_square,
-                              color: Color(0xFF16A34A),
-                              size: 22,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        ),
-      ),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                stream: _addressStream,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
 
+                  if (snapshot.hasError) {
+                    return Center(
+                      child: Text(
+                        'เกิดข้อผิดพลาดในการโหลดข้อมูล',
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodyLarge
+                            ?.copyWith(color: Colors.redAccent),
+                      ),
+                    );
+                  }
+
+                  final docs = snapshot.data?.docs ?? [];
+                  if (docs.isEmpty) {
+                    return _buildEmptyState(context);
+                  }
+
+                  final addresses =
+                      docs.map(Address.fromFirestore).toList(growable: false);
+
+                  return ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
+                    itemCount: addresses.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 12),
+                    itemBuilder: (context, index) {
+                      final address = addresses[index];
+                      return _AddressTile(address: address);
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
       bottomNavigationBar: Padding(
-        padding: const EdgeInsets.fromLTRB(10, 0, 10, 20),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
         child: SizedBox(
           width: double.infinity,
           child: OutlinedButton.icon(
-            onPressed: () {
-              context.pushNamed(
+            onPressed: () async {
+              await context.pushNamed(
                 'addnewaddress',
                 queryParameters: {'uid': widget.uid},
               );
@@ -159,7 +128,7 @@ class _UserAddressPageState extends State<UserAddressPage> {
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
               ),
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             ),
           ),
         ),
@@ -167,20 +136,137 @@ class _UserAddressPageState extends State<UserAddressPage> {
     );
   }
 
-  Future<void> LoadAddresses() async {
-    log('coming LoadAddresses');
-    final uid = widget.uid;
-    log('Checking UID: $uid');
-    final snapshot = await FirebaseFirestore.instance
-        .collection('addresses')
-        .where('uid', isEqualTo: uid)
-        .get();
-    log('Found ${snapshot.docs.length} documents');
-    for (final doc in snapshot.docs) {
-      log('DocID: ${doc.id} => ${doc.data()}');
+  Widget _buildEmptyState(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: const [
+          Icon(
+            BootstrapIcons.geo_alt,
+            color: Color(0xFF16A34A),
+            size: 56,
+          ),
+          SizedBox(height: 16),
+          Text(
+            'ยังไม่มีที่อยู่ที่บันทึกไว้',
+            style: TextStyle(color: Colors.white70, fontSize: 16),
+          ),
+          SizedBox(height: 8),
+          Text(
+            'กดปุ่มด้านล่างเพื่อเพิ่มที่อยู่ใหม่',
+            style: TextStyle(color: Colors.white60, fontSize: 14),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
-      addresses = snapshot.docs.map((doc) => doc.data()).toList();
-      setState(() {});
-    }
+class _AddressTile extends StatelessWidget {
+  const _AddressTile({required this.address});
+
+  final Address address;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDefault = address.isDefault == 0;
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF1F2937),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isDefault ? const Color(0xFF16A34A) : Colors.white12,
+          width: 1.3,
+        ),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(
+                BootstrapIcons.geo_alt,
+                color: Color(0xFF16A34A),
+                size: 26,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            address.label.isNotEmpty
+                                ? address.label
+                                : 'ไม่ระบุชื่อที่อยู่',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        if (isDefault)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF16A34A).withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(50),
+                            ),
+                            child: const Text(
+                              'ค่าเริ่มต้น',
+                              style: TextStyle(
+                                color: Color(0xFF16A34A),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      address.fullAddress,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Colors.white70,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (address.lat != null && address.lng != null) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Icon(
+                  BootstrapIcons.pin_map,
+                  color: Colors.white60,
+                  size: 16,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  '${address.lat?.toStringAsFixed(6)}, ${address.lng?.toStringAsFixed(6)}',
+                  style: const TextStyle(
+                    color: Colors.white60,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
   }
 }

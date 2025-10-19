@@ -1,8 +1,9 @@
 import 'dart:async';
+
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:dio/dio.dart';
 import 'package:latlong2/latlong.dart';
 
 class PickAddressMapPage extends StatefulWidget {
@@ -15,7 +16,11 @@ class PickAddressMapPage extends StatefulWidget {
 
 class _PickAddressMapPageState extends State<PickAddressMapPage> {
   final MapController _mapController = MapController();
-  final Dio _dio = Dio();
+  final Dio _dio = Dio(
+    BaseOptions(headers: const {'User-Agent': 'DeliveryApp/1.0 (https://github.com)'}),
+  );
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
 
   // --- State Variables ---
   LatLng? _currentCenter;
@@ -23,41 +28,68 @@ class _PickAddressMapPageState extends State<PickAddressMapPage> {
   bool _isFirstTimeLoading = true; // สำหรับโหลดครั้งแรกที่เข้าหน้า
   bool _isGeocoding = false; // สำหรับตอนกำลังแปลงพิกัดเป็นที่อยู่
   Timer? _debounce;
+  Timer? _searchDebounce;
   String? _errorMessage;
+  bool _isSearching = false;
+  List<Map<String, dynamic>> _searchResults = <Map<String, dynamic>>[];
+  Map<String, dynamic>? _currentAddressComponents;
 
   @override
   void initState() {
     super.initState();
     _determineInitialPosition();
+    _searchFocusNode.addListener(() {
+      if (!_searchFocusNode.hasFocus) {
+        setState(() {
+          _searchResults = <Map<String, dynamic>>[];
+        });
+      }
+    });
   }
 
   @override
   void dispose() {
     _debounce?.cancel();
+    _searchDebounce?.cancel();
     _mapController.dispose();
+    _searchController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
   }
 
   // Step 1: หาตำแหน่งเริ่มต้นของผู้ใช้ (ทำงานครั้งเดียว)
   Future<void> _determineInitialPosition() async {
     try {
+      final hasPermission = await _ensureLocationPermission();
+      LatLng fallback = const LatLng(13.7563, 100.5018);
+      if (!hasPermission) {
+        setState(() {
+          _currentCenter = fallback;
+          _isFirstTimeLoading = false;
+          _errorMessage = 'ไม่สามารถเข้าถึงตำแหน่งปัจจุบันได้';
+          _startGeocode(_currentCenter!);
+        });
+        return;
+      }
+
       final position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
       );
+      final center = LatLng(position.latitude, position.longitude);
       setState(() {
-        _currentCenter = LatLng(position.latitude, position.longitude);
+        _currentCenter = center;
         _isFirstTimeLoading = false;
-        _mapController.move(_currentCenter!, 17.0);
-        _startGeocode(_currentCenter!);
+        _errorMessage = null;
       });
+      _mapController.move(center, 17.0);
+      _startGeocode(center);
     } catch (e) {
-      // กรณีหาตำแหน่งไม่ได้จริงๆ ให้ใช้ค่าเริ่มต้น (กรุงเทพ)
       setState(() {
         _currentCenter = const LatLng(13.7563, 100.5018);
         _isFirstTimeLoading = false;
         _errorMessage = "ไม่สามารถเข้าถึงตำแหน่งปัจจุบันได้";
-        _startGeocode(_currentCenter!);
       });
+      _startGeocode(_currentCenter!);
     }
   }
 
@@ -65,7 +97,7 @@ class _PickAddressMapPageState extends State<PickAddressMapPage> {
   void _startGeocode(LatLng point) {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
     _debounce = Timer(const Duration(milliseconds: 300), () {
-      // ลดเวลา debounce ลงเล็กน้อย
+      _currentCenter = point;
       _reverseGeocode(point);
     });
   }
@@ -80,14 +112,15 @@ class _PickAddressMapPageState extends State<PickAddressMapPage> {
         'https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${point.latitude}&lon=${point.longitude}&accept-language=th';
 
     try {
-      final response = await _dio.get(
-        url,
-        options: Options(headers: {'User-Agent': 'Stegosight Flutter App'}),
-      );
+      final response = await _dio.get(url);
       if (response.statusCode == 200 && mounted) {
         setState(() {
           _currentAddress =
               response.data['display_name'] ?? 'ไม่พบข้อมูลที่อยู่';
+          final rawAddress = response.data['address'];
+          if (rawAddress is Map<String, dynamic>) {
+            _currentAddressComponents = rawAddress;
+          }
           _errorMessage = null;
         });
       }
@@ -151,8 +184,11 @@ class _PickAddressMapPageState extends State<PickAddressMapPage> {
         initialCenter: _currentCenter ?? const LatLng(13.7563, 100.5018),
         initialZoom: 17.0,
         onPositionChanged: (position, hasGesture) {
-          if (hasGesture && position.center != null) {
-            _startGeocode(position.center!);
+          if (position.center != null) {
+            _currentCenter = position.center;
+            if (hasGesture) {
+              _startGeocode(position.center!);
+            }
           }
         },
       ),
@@ -181,32 +217,91 @@ class _PickAddressMapPageState extends State<PickAddressMapPage> {
       top: MediaQuery.of(context).padding.top + 10,
       left: 15,
       right: 15,
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          FloatingActionButton.small(
-            onPressed: () => Navigator.of(context).pop(),
-            backgroundColor: Colors.white,
-            child: const Icon(Icons.arrow_back, color: Colors.black),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Card(
-              elevation: 4,
-              color: Color.fromARGB(255, 255, 255, 255),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(30),
+          Row(
+            children: [
+              FloatingActionButton.small(
+                onPressed: () => Navigator.of(context).pop(),
+                backgroundColor: Colors.white,
+                child: const Icon(Icons.arrow_back, color: Colors.black),
               ),
-              child: const TextField(
-                decoration: InputDecoration(
-                  hintText: 'ค้นหาที่อยู่หรือชื่ออาคาร',
-                  prefixIcon: Icon(Icons.search),
-                  border: InputBorder.none,
-                  contentPadding: EdgeInsets.symmetric(vertical: 15),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Card(
+                  elevation: 4,
+                  color: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(30),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _searchController,
+                          focusNode: _searchFocusNode,
+                          onChanged: _onSearchChanged,
+                          textInputAction: TextInputAction.search,
+                          onSubmitted: _performSearch,
+                          decoration: const InputDecoration(
+                            hintText: 'ค้นหาที่อยู่หรือชื่ออาคาร',
+                            prefixIcon: Icon(Icons.search),
+                            border: InputBorder.none,
+                            contentPadding: EdgeInsets.symmetric(vertical: 15),
+                          ),
+                          style: const TextStyle(color: Colors.black),
+                        ),
+                      ),
+                      if (_isSearching)
+                        const Padding(
+                          padding: EdgeInsets.only(right: 16),
+                          child: SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
-                style: TextStyle(color: Colors.black),
+              ),
+            ],
+          ),
+          if (_searchResults.isNotEmpty)
+            Container(
+              margin: const EdgeInsets.only(top: 8),
+              constraints: const BoxConstraints(maxHeight: 260),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.15),
+                    blurRadius: 8,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: ListView.separated(
+                shrinkWrap: true,
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                itemCount: _searchResults.length,
+                separatorBuilder: (_, __) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  final result = _searchResults[index];
+                  final title = result['display_name'] as String? ?? '';
+                  return ListTile(
+                    onTap: () => _selectSearchResult(result),
+                    leading: const Icon(Icons.location_pin, color: Colors.green),
+                    title: Text(
+                      title,
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                  );
+                },
               ),
             ),
-          ),
         ],
       ),
     );
@@ -278,10 +373,14 @@ class _PickAddressMapPageState extends State<PickAddressMapPage> {
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: () {
-                    if (Navigator.canPop(context)) {
+                    if (Navigator.canPop(context) && _currentCenter != null) {
                       Navigator.pop(context, {
                         'address': _currentAddress,
-                        'latlng': _currentCenter,
+                        'latlng': {
+                          'lat': _currentCenter!.latitude,
+                          'lng': _currentCenter!.longitude,
+                        },
+                        'addressComponents': _currentAddressComponents,
                       });
                     }
                   },
@@ -307,5 +406,100 @@ class _PickAddressMapPageState extends State<PickAddressMapPage> {
         ),
       ),
     );
+  }
+
+  Future<bool> _ensureLocationPermission() async {
+    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'กรุณาเปิดบริการระบุตำแหน่ง';
+        });
+      }
+      return false;
+    }
+
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'โปรดอนุญาตการเข้าถึงตำแหน่ง';
+        });
+      }
+      return false;
+    }
+    return true;
+  }
+
+  void _onSearchChanged(String value) {
+    _searchDebounce?.cancel();
+    final trimmed = value.trim();
+    if (trimmed.length < 3) {
+      setState(() {
+        _searchResults = <Map<String, dynamic>>[];
+      });
+      return;
+    }
+    _searchDebounce = Timer(const Duration(milliseconds: 350), () {
+      _performSearch(trimmed);
+    });
+  }
+
+  Future<void> _performSearch(String query) async {
+    if (query.isEmpty) return;
+    setState(() {
+      _isSearching = true;
+    });
+
+    final url =
+        'https://nominatim.openstreetmap.org/search?format=jsonv2&q=${Uri.encodeComponent(query)}&addressdetails=1&accept-language=th&limit=6';
+    try {
+      final response = await _dio.get(url);
+      final data = response.data;
+      if (data is List) {
+        setState(() {
+          _searchResults = data
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e as Map<String, dynamic>))
+              .toList(growable: false);
+        });
+      }
+    } catch (_) {
+      setState(() {
+        _searchResults = <Map<String, dynamic>>[];
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSearching = false;
+        });
+      }
+    }
+  }
+
+  void _selectSearchResult(Map<String, dynamic> result) {
+    final lat = double.tryParse(result['lat'] as String? ?? '');
+    final lon = double.tryParse(result['lon'] as String? ?? '');
+    if (lat == null || lon == null) {
+      return;
+    }
+    final center = LatLng(lat, lon);
+    final address = result['address'];
+    setState(() {
+      _searchController.text = result['display_name'] as String? ?? '';
+      _searchResults = <Map<String, dynamic>>[];
+      _currentCenter = center;
+      if (address is Map<String, dynamic>) {
+        _currentAddressComponents = address;
+      }
+    });
+    FocusScope.of(context).unfocus();
+    _mapController.move(center, 17.0);
+    _startGeocode(center);
   }
 }
