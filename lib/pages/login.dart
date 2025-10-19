@@ -23,6 +23,7 @@ class _LoginPageState extends State<LoginPage> {
   String role = 'ผู้ใช้';
   bool rememberMe = false; // state ของ checkbox
   bool obscureText = true; // ค่าเริ่มต้น: ซ่อนรหัสผ่าน
+  bool _isSubmitting = false;
 
   // Controller เก็บค่าชื่อผู้ใช้/รหัสผ่าน
   final TextEditingController usernameController = TextEditingController();
@@ -30,6 +31,8 @@ class _LoginPageState extends State<LoginPage> {
 
   // ===== ฟังก์ชัน Login (อีเมลหรือชื่อผู้ใช้) =====
   Future<void> loginUser() async {
+    if (_isSubmitting) return;
+
     final inputUser = usernameController.text.trim();
     final inputPass = passwordController.text.trim();
 
@@ -41,6 +44,8 @@ class _LoginPageState extends State<LoginPage> {
       );
       return;
     }
+
+    setState(() => _isSubmitting = true);
 
     try {
       // init Firebase ป้องกัน error
@@ -84,37 +89,71 @@ class _LoginPageState extends State<LoginPage> {
       final userCredential = await FirebaseAuth.instance
           .signInWithEmailAndPassword(email: emailToLogin, password: inputPass);
 
-      final UserID = userCredential.user!.uid;
+      final userId = userCredential.user?.uid;
+      if (userId == null || userId.isEmpty) {
+        throw Exception('ไม่พบรหัสผู้ใช้จากระบบ');
+      }
 
       final profDoc = await FirebaseFirestore.instance
           .collection(collectionName)
-          .doc(UserID)
+          .doc(userId)
           .get();
-      final profile = profDoc.data();
 
-      await showSuccessDialog(
-        context,
-        message: 'เข้าสู่ระบบ $role สำเร็จ',
-      );
+      if (!profDoc.exists) {
+        throw Exception('ไม่พบข้อมูลโปรไฟล์ของผู้ใช้');
+      }
+
+      final profile = profDoc.data() as Map<String, dynamic>?;
+      if (profile == null) {
+        throw Exception('ข้อมูลโปรไฟล์ไม่ถูกต้อง');
+      }
 
       if (!mounted) return;
       context.goNamed(
         'index',
-        queryParameters: {'uid': UserID},
-        extra: Users.fromMap(profile!),
+        queryParameters: {'uid': userId},
+        extra: Users.fromMap({
+          ...profile,
+          'uid': userId,
+        }),
       );
     } on FirebaseAuthException catch (e) {
+      String message;
+      switch (e.code) {
+        case 'user-not-found':
+          message = 'ไม่พบบัญชีผู้ใช้ในระบบ';
+          break;
+        case 'wrong-password':
+          message = 'รหัสผ่านไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง';
+          break;
+        case 'invalid-email':
+          message = 'รูปแบบอีเมลไม่ถูกต้อง';
+          break;
+        case 'user-disabled':
+          message = 'บัญชีนี้ถูกระงับการใช้งาน กรุณาติดต่อผู้ดูแลระบบ';
+          break;
+        case 'too-many-requests':
+          message = 'พยายามเข้าสู่ระบบหลายครั้งเกินไป กรุณาลองใหม่ภายหลัง';
+          break;
+        default:
+          message = e.message ?? 'ไม่สามารถเข้าสู่ระบบได้ กรุณาลองใหม่';
+      }
+
       await showErrorDialog(
         context,
         title: 'เข้าสู่ระบบไม่สำเร็จ',
-        message: 'Auth Error: ${e.message}',
+        message: message,
       );
     } catch (e) {
       await showErrorDialog(
         context,
         title: 'เกิดข้อผิดพลาด',
-        message: 'เกิดข้อผิดพลาด: $e',
+        message: '$e',
       );
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
     }
   }
 
@@ -452,14 +491,25 @@ class _LoginPageState extends State<LoginPage> {
                                   vertical: 14,
                                 ),
                               ),
-                              onPressed: loginUser,
-                              child: const Text(
-                                'เข้าสู่ระบบ',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  color: Colors.white,
-                                ),
-                              ),
+                              onPressed: _isSubmitting ? null : loginUser,
+                              child: _isSubmitting
+                                  ? const SizedBox(
+                                      width: 22,
+                                      height: 22,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2.5,
+                                        valueColor: AlwaysStoppedAnimation(
+                                          Colors.white,
+                                        ),
+                                      ),
+                                    )
+                                  : const Text(
+                                      'เข้าสู่ระบบ',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        color: Colors.white,
+                                      ),
+                                    ),
                             ),
                           ),
                           const SizedBox(height: 12),
