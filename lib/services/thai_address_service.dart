@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:collection/collection.dart';
 import 'package:delivery_app/models/thai_address.dart';
 import 'package:dio/dio.dart';
 
@@ -61,6 +62,28 @@ class ThaiAddressService {
         .where((sub) => sub.districtId == districtId)
         .toList()
       ..sort((a, b) => a.nameTh.compareTo(b.nameTh));
+  }
+
+  Future<Province?> getProvinceById(int provinceId) async {
+    final provinces = await getProvinces();
+    return provinces.firstWhereOrNull((province) => province.id == provinceId);
+  }
+
+  Future<District?> getDistrictById(int districtId) async {
+    _cachedDistricts ??= await _loadDistricts();
+    return _cachedDistricts!.firstWhereOrNull((district) => district.id == districtId);
+  }
+
+  Future<List<SubDistrict>> findSubDistrictsByPostalCode(String postalCode) async {
+    final trimmed = postalCode.trim();
+    if (trimmed.isEmpty) {
+      return <SubDistrict>[];
+    }
+
+    _cachedSubDistricts ??= await _loadSubDistricts();
+    return _cachedSubDistricts!
+        .where((subDistrict) => subDistrict.zipCode == trimmed)
+        .toList();
   }
 
   Future<List<District>> _loadDistricts() async {

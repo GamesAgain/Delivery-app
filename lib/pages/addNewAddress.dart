@@ -679,13 +679,77 @@ class _AddressFormPageState extends State<AddressFormPage> {
       ]),
     );
 
-    await _selectProvinceByName(provinceName, fromAutoFill: true);
-    await _selectDistrictByName(districtName, fromAutoFill: true);
-    await _selectSubDistrictByName(subDistrictName);
+    var matchedProvince =
+        await _selectProvinceByName(provinceName, fromAutoFill: true);
+    var matchedDistrict =
+        await _selectDistrictByName(districtName, fromAutoFill: true);
+    var matchedSubDistrict = await _selectSubDistrictByName(subDistrictName);
 
-    final postalCode = _firstNonEmpty(components, const ['postcode', 'postal_code']);
+    final postalCode =
+        _firstNonEmpty(components, const ['postcode', 'postal_code']);
+    List<SubDistrict> postalMatches = <SubDistrict>[];
+    if (postalCode != null && postalCode.length == 5) {
+      postalMatches = await _thaiAddressService
+          .findSubDistrictsByPostalCode(postalCode);
+    }
+
+    if (postalMatches.isNotEmpty &&
+        (matchedProvince == null ||
+            matchedDistrict == null ||
+            matchedSubDistrict == null)) {
+      final fallbackSubDistrict = await _resolveSubDistrictFromPostalMatches(
+        postalMatches,
+        subDistrictName,
+        districtName,
+      );
+
+      if (fallbackSubDistrict != null) {
+        final fallbackDistrict = await _thaiAddressService
+            .getDistrictById(fallbackSubDistrict.districtId);
+        Province? fallbackProvince;
+        if (fallbackDistrict != null) {
+          fallbackProvince = await _thaiAddressService
+              .getProvinceById(fallbackDistrict.provinceId);
+        }
+
+        if (fallbackProvince != null) {
+          final provinceId = fallbackProvince.id;
+          final provinceInList =
+              _provinces.firstWhereOrNull((province) => province.id == provinceId);
+          if (provinceInList != null &&
+              (_selectedProvince?.id != provinceInList.id ||
+                  _districts.isEmpty)) {
+            await _onProvinceChanged(provinceInList, fromAutoFill: true);
+          }
+          matchedProvince ??= provinceInList;
+        }
+
+        if (fallbackDistrict != null) {
+          final districtId = fallbackDistrict.id;
+          final districtInList =
+              _districts.firstWhereOrNull((district) => district.id == districtId);
+          if (districtInList != null &&
+              (_selectedDistrict?.id != districtInList.id ||
+                  _subDistricts.isEmpty)) {
+            await _onDistrictChanged(districtInList, fromAutoFill: true);
+          }
+          matchedDistrict ??= districtInList;
+        }
+
+        final subDistrictInList = _subDistricts
+            .firstWhereOrNull((sub) => sub.id == fallbackSubDistrict.id);
+        if (subDistrictInList != null &&
+            (_selectedSubDistrict?.id != subDistrictInList.id)) {
+          _onSubDistrictChanged(subDistrictInList);
+        }
+        matchedSubDistrict ??= subDistrictInList;
+      }
+    }
+
     if (postalCode != null && postalCode.length == 5) {
       _postalCodeController.text = postalCode;
+    } else if (matchedSubDistrict != null) {
+      _postalCodeController.text = matchedSubDistrict.zipCode;
     }
 
     final houseNumber = _firstNonEmpty(components, const [
@@ -709,6 +773,58 @@ class _AddressFormPageState extends State<AddressFormPage> {
     }
 
     setState(() {});
+  }
+
+  Future<SubDistrict?> _resolveSubDistrictFromPostalMatches(
+    List<SubDistrict> candidates,
+    String? subDistrictName,
+    String? districtName,
+  ) async {
+    if (candidates.isEmpty) {
+      return null;
+    }
+
+    final normalizedSubDistrict = _normalize(subDistrictName);
+    if (normalizedSubDistrict.isNotEmpty) {
+      final match = candidates.firstWhereOrNull(
+        (candidate) =>
+            _normalizedStringsMatch(
+              normalizedSubDistrict,
+              _normalize(candidate.nameTh),
+            ) ||
+            _normalizedStringsMatch(
+              normalizedSubDistrict,
+              _normalize(candidate.nameEn),
+            ),
+      );
+      if (match != null) {
+        return match;
+      }
+    }
+
+    final normalizedDistrict = _normalize(districtName);
+    if (normalizedDistrict.isNotEmpty) {
+      for (final candidate in candidates) {
+        final district =
+            await _thaiAddressService.getDistrictById(candidate.districtId);
+        if (district == null) {
+          continue;
+        }
+        final matchesDistrict = _normalizedStringsMatch(
+              normalizedDistrict,
+              _normalize(district.nameTh),
+            ) ||
+            _normalizedStringsMatch(
+              normalizedDistrict,
+              _normalize(district.nameEn),
+            );
+        if (matchesDistrict) {
+          return candidate;
+        }
+      }
+    }
+
+    return candidates.first;
   }
 
   Future<Province?> _selectProvinceByName(String? name,
