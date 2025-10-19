@@ -28,7 +28,7 @@ class _DeliverylistPageState extends State<DeliverylistPage> {
 
     return FirebaseFirestore.instance
         .collection('delivery')
-        .where('receiver_uid', isEqualTo: currentUser.uid)
+        .where('sender_uid', isEqualTo: currentUser.uid)
         .orderBy('created_at', descending: true)
         .snapshots()
         .asyncMap((snapshot) async {
