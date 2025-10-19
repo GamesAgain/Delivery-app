@@ -19,9 +19,18 @@ class _UserAddressPageState extends State<UserAddressPage> {
   @override
   void initState() {
     super.initState();
-    _addressStream = FirebaseFirestore.instance
+    _addressStream = _buildAddressStream();
+  }
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> _buildAddressStream() {
+    final uid = widget.uid;
+    if (uid == null || uid.isEmpty) {
+      return Stream<QuerySnapshot<Map<String, dynamic>>>.empty();
+    }
+
+    return FirebaseFirestore.instance
         .collection('addresses')
-        .where('uid', isEqualTo: widget.uid)
+        .where('uid', isEqualTo: uid)
         .orderBy('is_default')
         .orderBy('create_at', descending: true)
         .snapshots();
@@ -60,6 +69,10 @@ class _UserAddressPageState extends State<UserAddressPage> {
               child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                 stream: _addressStream,
                 builder: (context, snapshot) {
+                  if (widget.uid == null || widget.uid!.isEmpty) {
+                    return _buildEmptyState(context);
+                  }
+
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator());
                   }
