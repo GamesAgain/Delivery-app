@@ -719,9 +719,14 @@ class _AddressFormPageState extends State<AddressFormPage> {
 
     final normalized = _normalize(name);
     final match = _provinces.firstWhereOrNull(
-      (element) =>
-          _normalize(element.nameTh) == normalized ||
-          _normalize(element.nameEn) == normalized,
+      (element) => _normalizedStringsMatch(
+            normalized,
+            _normalize(element.nameTh),
+          ) ||
+          _normalizedStringsMatch(
+            normalized,
+            _normalize(element.nameEn),
+          ),
     );
 
     if (match == null) {
@@ -747,9 +752,14 @@ class _AddressFormPageState extends State<AddressFormPage> {
 
     final normalized = _normalize(name);
     final match = _districts.firstWhereOrNull(
-      (element) =>
-          _normalize(element.nameTh) == normalized ||
-          _normalize(element.nameEn) == normalized,
+      (element) => _normalizedStringsMatch(
+            normalized,
+            _normalize(element.nameTh),
+          ) ||
+          _normalizedStringsMatch(
+            normalized,
+            _normalize(element.nameEn),
+          ),
     );
 
     if (match == null) {
@@ -774,9 +784,14 @@ class _AddressFormPageState extends State<AddressFormPage> {
 
     final normalized = _normalize(name);
     final match = _subDistricts.firstWhereOrNull(
-      (element) =>
-          _normalize(element.nameTh) == normalized ||
-          _normalize(element.nameEn) == normalized,
+      (element) => _normalizedStringsMatch(
+            normalized,
+            _normalize(element.nameTh),
+          ) ||
+          _normalizedStringsMatch(
+            normalized,
+            _normalize(element.nameEn),
+          ),
     );
 
     if (match == null) {
@@ -1099,12 +1114,20 @@ class _AddressFormPageState extends State<AddressFormPage> {
   }
 
   String _normalize(String? input) {
-    return (input ?? '')
-        .replaceAll(' ', '')
-        .replaceAll('-', '')
+    var value = (input ?? '').toLowerCase();
+    value = value
+        .replaceAll(RegExp(r'[\s\-_/\\.,()]+'), '')
         .replaceAll('จ\.', '')
         .replaceAll('อ\.', '')
         .replaceAll('ต\.', '')
+        .replaceAll('จังหวัด', '')
+        .replaceAll('อำเภอ', '')
+        .replaceAll('ตำบล', '')
+        .replaceAll('แขวง', '')
+        .replaceAll('เขต', '')
+        .replaceAll('กรุงเทพมหานคร', 'กรุงเทพ')
+        .replaceAll('krungthepmahanakhon', 'bangkok')
+        .replaceAll('khet', '')
         .replaceFirst(RegExp(r'^mueang'), '')
         .replaceFirst(RegExp(r'^muang'), '')
         .replaceAll('district', '')
@@ -1118,8 +1141,24 @@ class _AddressFormPageState extends State<AddressFormPage> {
         .replaceAll('city', '')
         .replaceAll('county', '')
         .replaceAll('municipality', '')
+        .replaceAll('metropolitan', '')
+        .replaceAll('region', '')
         .replaceAll('borough', '')
-        .toLowerCase();
+        .replaceAll('area', '')
+        .replaceAll('thailand', '')
+        .replaceAll('ofthe', '')
+        .replaceAll('bangkokmetropolis', 'bangkok');
+    return value;
+  }
+
+  bool _normalizedStringsMatch(String a, String b) {
+    if (a.isEmpty || b.isEmpty) {
+      return false;
+    }
+    if (a == b) {
+      return true;
+    }
+    return a.contains(b) || b.contains(a);
   }
 
   String? _firstNonEmpty(
