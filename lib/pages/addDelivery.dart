@@ -10,6 +10,7 @@ import 'package:flutter_svg/svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class AddDeliveryPage extends StatefulWidget {
   const AddDeliveryPage({super.key});
@@ -24,6 +25,9 @@ class _AddDeliveryPageState extends State<AddDeliveryPage> {
   final ImagePicker picker = ImagePicker();
 
   Map<String, dynamic>? _selectedReceiver;
+  String? _pickupAddressId;
+  String? _dropoffAddressId;
+  bool _isLoadingAddresses = false;
   File? deliveryImage;
   bool _submitting = false;
 
@@ -236,6 +240,16 @@ class _AddDeliveryPageState extends State<AddDeliveryPage> {
                                       fontSize: 12,
                                     ),
                                   ),
+                                  if (_isLoadingAddresses) ...[
+                                    const SizedBox(width: 8),
+                                    const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),
@@ -383,10 +397,103 @@ class _AddDeliveryPageState extends State<AddDeliveryPage> {
     );
 
     if (result != null) {
-      setState(() {
-        _selectedReceiver = result;
-      });
+      await _onReceiverSelected(result);
     }
+  }
+
+  Future<void> _onReceiverSelected(Map<String, dynamic> receiver) async {
+    setState(() {
+      _selectedReceiver = receiver;
+      _pickupAddressId = null;
+      _dropoffAddressId = null;
+    });
+
+    final receiverUid = receiver['uid'] as String?;
+    final sender = FirebaseAuth.instance.currentUser;
+
+    if (receiverUid == null || receiverUid.isEmpty) {
+      await showErrorDialog(
+        context,
+        title: "เกิดข้อผิดพลาด",
+        message: "ไม่พบข้อมูลผู้รับ กรุณาลองใหม่อีกครั้ง",
+      );
+      return;
+    }
+
+    if (sender == null) {
+      await showErrorDialog(
+        context,
+        title: "เกิดข้อผิดพลาด",
+        message: "ไม่สามารถระบุผู้ส่งได้ กรุณาเข้าสู่ระบบอีกครั้ง",
+      );
+      return;
+    }
+
+    setState(() {
+      _isLoadingAddresses = true;
+    });
+
+    try {
+      final pickupId = await _fetchDefaultAddressId(sender.uid);
+      final dropoffId = await _fetchDefaultAddressId(receiverUid);
+
+      if (!mounted) return;
+
+      setState(() {
+        _pickupAddressId = pickupId;
+        _dropoffAddressId = dropoffId;
+      });
+
+      if (pickupId == null) {
+        await showWarningSnackBar(
+          context,
+          title: "ข้อมูลไม่ครบ",
+          message: "ไม่พบที่อยู่รับสินค้าของคุณ กรุณาเพิ่มที่อยู่เริ่มต้น",
+        );
+      }
+
+      if (dropoffId == null) {
+        await showWarningSnackBar(
+          context,
+          title: "ข้อมูลไม่ครบ",
+          message: "ไม่พบที่อยู่จัดส่งของผู้รับ กรุณาให้ผู้รับเพิ่มที่อยู่",
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      await showErrorDialog(
+        context,
+        title: "เกิดข้อผิดพลาด",
+        message: "ไม่สามารถโหลดที่อยู่ได้: $e",
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingAddresses = false;
+        });
+      }
+    }
+  }
+
+  Future<String?> _fetchDefaultAddressId(String uid) async {
+    final querySnapshot = await FirebaseFirestore.instance
+        .collection('addresses')
+        .where('uid', isEqualTo: uid)
+        .where('is_default', isEqualTo: 0)
+        .limit(1)
+        .get();
+
+    if (querySnapshot.docs.isEmpty) {
+      return null;
+    }
+
+    final doc = querySnapshot.docs.first;
+    final data = doc.data();
+    final addrId = data['addr_id'];
+    if (addrId is String && addrId.isNotEmpty) {
+      return addrId;
+    }
+    return doc.id;
   }
 
   void addDeliveryItem() async {
@@ -403,6 +510,32 @@ class _AddDeliveryPageState extends State<AddDeliveryPage> {
         context,
         title: "ข้อมูลไม่ครบ",
         message: "กรุณาเลือกผู้รับสินค้า",
+      );
+      return;
+    }
+    if (_pickupAddressId == null || _pickupAddressId!.isEmpty) {
+      await showWarningSnackBar(
+        context,
+        title: "ข้อมูลไม่ครบ",
+        message: "กรุณาตั้งค่าที่อยู่รับสินค้าของคุณ",
+      );
+      return;
+    }
+    if (_dropoffAddressId == null || _dropoffAddressId!.isEmpty) {
+      await showWarningSnackBar(
+        context,
+        title: "ข้อมูลไม่ครบ",
+        message: "ไม่พบที่อยู่จัดส่งของผู้รับ",
+      );
+      return;
+    }
+
+    final senderUid = FirebaseAuth.instance.currentUser?.uid;
+    if (senderUid == null || senderUid.isEmpty) {
+      await showErrorDialog(
+        context,
+        title: "เกิดข้อผิดพลาด",
+        message: "ไม่สามารถระบุผู้ส่งได้ กรุณาเข้าสู่ระบบอีกครั้ง",
       );
       return;
     }
@@ -433,10 +566,10 @@ class _AddDeliveryPageState extends State<AddDeliveryPage> {
         "did": docRef.id,
         "item_name": deliNameCtrl.text.trim(),
         "item_image": itemImageUrl,
-        "sender_uid": "senderUid", // TODO: แก้ไข
+        "sender_uid": senderUid,
         "receiver_uid": _selectedReceiver!['uid'],
-        "pickup_addr_id": "test", // TODO: แก้ไข
-        "dropoff_addr_id": "test", // TODO: แก้ไข
+        "pickup_addr_id": _pickupAddressId,
+        "dropoff_addr_id": _dropoffAddressId,
         "note": noteCtrl.text.trim(),
         "created_at": FieldValue.serverTimestamp(),
         "status": "pending",
