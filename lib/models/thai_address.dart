@@ -11,7 +11,7 @@ class Province {
 
   factory Province.fromJson(Map<String, dynamic> json) {
     return Province(
-      id: (json['id'] as num).toInt(),
+      id: _parseId(json['id']),
       nameTh: json['name_th'] as String,
       nameEn: json['name_en'] as String,
     );
@@ -32,11 +32,16 @@ class District {
   final int provinceId;
 
   factory District.fromJson(Map<String, dynamic> json) {
+    final provinceIdValue =
+        json['province_id'] ?? json['provinceId'] ?? json['province_code'];
+    if (provinceIdValue == null) {
+      throw const FormatException('Missing province id in district payload');
+    }
     return District(
-      id: (json['id'] as num).toInt(),
+      id: _parseId(json['id']),
       nameTh: json['name_th'] as String,
       nameEn: json['name_en'] as String,
-      provinceId: (json['province_id'] as num).toInt(),
+      provinceId: _parseId(provinceIdValue),
     );
   }
 }
@@ -57,12 +62,30 @@ class SubDistrict {
   final int districtId;
 
   factory SubDistrict.fromJson(Map<String, dynamic> json) {
+    final districtIdValue = json['amphure_id'] ??
+        json['district_id'] ??
+        json['districtId'] ??
+        json['amphure_code'] ??
+        json['district_code'];
+    if (districtIdValue == null) {
+      throw const FormatException('Missing district id in sub-district payload');
+    }
     return SubDistrict(
-      id: (json['id'] as num).toInt(),
+      id: _parseId(json['id']),
       nameTh: json['name_th'] as String,
       nameEn: json['name_en'] as String,
-      zipCode: json['zip_code'] as String,
-      districtId: (json['amphure_id'] as num).toInt(),
+      zipCode: json['zip_code'].toString(),
+      districtId: _parseId(districtIdValue),
     );
   }
+}
+
+int _parseId(dynamic value) {
+  if (value is num) {
+    return value.toInt();
+  }
+  if (value is String) {
+    return int.parse(value);
+  }
+  throw FormatException('Invalid identifier value: $value');
 }
