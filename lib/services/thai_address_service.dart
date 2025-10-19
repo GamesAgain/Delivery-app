@@ -15,11 +15,11 @@ class ThaiAddressService {
   List<SubDistrict>? _cachedSubDistricts;
 
   static const _provinceUrl =
-      'https://raw.githubusercontent.com/kongvut/thai-province-data/main/api_province.json';
+      'https://raw.githubusercontent.com/kongvut/thai-province-data/refs/heads/master/api/latest/province.json';
   static const _districtUrl =
-      'https://raw.githubusercontent.com/kongvut/thai-province-data/main/api_amphure.json';
+      'https://raw.githubusercontent.com/kongvut/thai-province-data/refs/heads/master/api/latest/district.json';
   static const _subDistrictUrl =
-      'https://raw.githubusercontent.com/kongvut/thai-province-data/main/api_tambon.json';
+      'https://raw.githubusercontent.com/kongvut/thai-province-data/refs/heads/master/api/latest/sub_district.json';
 
   Future<List<Province>> getProvinces() async {
     if (_cachedProvinces != null) {
@@ -70,13 +70,23 @@ class ThaiAddressService {
   }
 
   List<dynamic> _validateResponseBody(Response<dynamic> response) {
-    if (response.data is! List) {
-      throw DioException(
-        requestOptions: response.requestOptions,
-        response: response,
-        error: 'รูปแบบข้อมูลจังหวัด/อำเภอ/ตำบลไม่ถูกต้อง',
-      );
+    final dynamic body = response.data;
+
+    if (body is List) {
+      return body;
     }
-    return response.data as List<dynamic>;
+
+    if (body is Map<String, dynamic>) {
+      final dynamic data = body['data'];
+      if (data is List) {
+        return data;
+      }
+    }
+
+    throw DioException(
+      requestOptions: response.requestOptions,
+      response: response,
+      error: 'รูปแบบข้อมูลจังหวัด/อำเภอ/ตำบลไม่ถูกต้อง',
+    );
   }
 }
