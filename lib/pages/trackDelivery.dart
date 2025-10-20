@@ -381,9 +381,9 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
                 border: Border.all(color: Colors.white, width: 2),
                 boxShadow: const [
                   BoxShadow(
-                    color: Colors.black38,
-                    blurRadius: 8,
-                    offset: Offset(0, 4),
+                    color: Color(0x66FF3B30),
+                    blurRadius: 10,
+                    offset: Offset(0, 6),
                   ),
                 ],
               ),
@@ -633,6 +633,13 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
           decoration: BoxDecoration(
             color: const Color(0x2216A34A),
             borderRadius: BorderRadius.circular(14),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x55FF3B30),
+                blurRadius: 12,
+                offset: Offset(0, 8),
+              ),
+            ],
           ),
           child: Icon(
             icon,
