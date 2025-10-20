@@ -346,8 +346,8 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
 
     return Marker(
       point: delivery.position,
-      width: 96,
-      height: 96,
+      width: 140,
+      height: 120,
       builder: (context) => GestureDetector(
         onTap: () => _onFocusRequest(delivery),
         child: Column(
@@ -355,6 +355,7 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
           children: [
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              constraints: const BoxConstraints(maxWidth: 120),
               decoration: BoxDecoration(
                 color: Colors.black.withOpacity(0.65),
                 borderRadius: BorderRadius.circular(14),
@@ -366,6 +367,10 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
                 ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                softWrap: false,
+                textAlign: TextAlign.center,
               ),
             ),
             const SizedBox(height: 6),
