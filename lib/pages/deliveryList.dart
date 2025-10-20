@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import 'package:delivery_app/pages/trackDelivery.dart';
+
 class DeliverylistPage extends StatefulWidget {
   const DeliverylistPage({super.key});
 
@@ -19,6 +21,33 @@ class _DeliverylistPageState extends State<DeliverylistPage> {
   static const Color green = Color(0xFF16A34A); // เขียวแท็บที่เลือก
 
   final Map<String, Future<_UserProfile?>> _userCache = {};
+  final TextEditingController _searchController = TextEditingController();
+  String _searchTerm = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _openGlobalTracking(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const TrackDeliveryPage(),
+      ),
+    );
+  }
+
+  void _openDeliveryTracking(BuildContext context, _DeliveryUiModel delivery) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => TrackDeliveryPage(
+          deliveryId: delivery.did,
+          itemName: delivery.itemName,
+        ),
+      ),
+    );
+  }
 
   Stream<List<_DeliveryUiModel>> _deliveryStream() {
     final currentUser = FirebaseAuth.instance.currentUser;
@@ -138,7 +167,8 @@ class _DeliverylistPageState extends State<DeliverylistPage> {
     return '$hours hrs $minutes mins';
   }
 
-  Widget _buildDeliveryCard(_DeliveryUiModel delivery, int index) {
+  Widget _buildDeliveryCard(
+      BuildContext context, _DeliveryUiModel delivery, int index) {
     final isDarkCard = index.isEven;
     final cardColor =
         isDarkCard ? const Color(0x0DD9D9D9) : const Color(0xCCFFFFFF);
@@ -164,7 +194,7 @@ class _DeliverylistPageState extends State<DeliverylistPage> {
               ),
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             ),
-            onPressed: () {},
+            onPressed: () => _openDeliveryTracking(context, delivery),
             child: Row(
               children: [
                 const Icon(
@@ -197,7 +227,7 @@ class _DeliverylistPageState extends State<DeliverylistPage> {
               ),
               padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
             ),
-            onPressed: () {},
+            onPressed: () => _openDeliveryTracking(context, delivery),
             child: Row(
               children: [
                 const Icon(
@@ -559,19 +589,44 @@ class _DeliverylistPageState extends State<DeliverylistPage> {
                   decoration: BoxDecoration(
                     color: const Color(0x1416A34A),
                     borderRadius: BorderRadius.circular(28),
+                    border: Border.all(color: const Color(0x3316A34A)),
                   ),
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: const Row(
-                    children: [
-                      Icon(BootstrapIcons.search, color: Colors.white70),
-                      SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          'Find  your Delivery',
-                          style: TextStyle(color: Colors.white60),
-                        ),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: (value) =>
+                        setState(() => _searchTerm = value.toLowerCase().trim()),
+                    cursorColor: green,
+                    style: GoogleFonts.poppins(
+                      color: Colors.white,
+                      fontSize: 14,
+                    ),
+                    textInputAction: TextInputAction.search,
+                    decoration: InputDecoration(
+                      icon: const Icon(
+                        BootstrapIcons.search,
+                        color: Colors.white70,
                       ),
-                    ],
+                      hintText: 'Find your Delivery',
+                      hintStyle: GoogleFonts.poppins(
+                        color: Colors.white60,
+                        fontSize: 13,
+                      ),
+                      border: InputBorder.none,
+                      suffixIcon: _searchTerm.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(
+                                BootstrapIcons.x,
+                                color: Colors.white60,
+                                size: 18,
+                              ),
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() => _searchTerm = '');
+                              },
+                            )
+                          : null,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -589,9 +644,11 @@ class _DeliverylistPageState extends State<DeliverylistPage> {
                         padding: const EdgeInsets.symmetric(vertical: 4),
                       ),
                       onPressed: () {
-                        Navigator.of(
-                          context,
-                        ).push(MaterialPageRoute(builder: (_) => AddDeliveryPage()));
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const AddDeliveryPage(),
+                          ),
+                        );
                       },
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -631,7 +688,7 @@ class _DeliverylistPageState extends State<DeliverylistPage> {
                         ),
                         padding: const EdgeInsets.symmetric(vertical: 4),
                       ),
-                      onPressed: () {},
+                      onPressed: () => _openGlobalTracking(context),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 4),
                         child: Row(
@@ -712,6 +769,15 @@ class _DeliverylistPageState extends State<DeliverylistPage> {
 
                     final deliveries =
                         snapshot.data ?? const <_DeliveryUiModel>[];
+                    final searchQuery = _searchTerm;
+                    final filteredDeliveries = searchQuery.isEmpty
+                        ? deliveries
+                        : deliveries
+                            .where((delivery) => delivery.itemName
+                                .toLowerCase()
+                                .contains(searchQuery))
+                            .toList();
+
                     if (deliveries.isEmpty) {
                       return Center(
                         child: Text(
@@ -721,12 +787,22 @@ class _DeliverylistPageState extends State<DeliverylistPage> {
                       );
                     }
 
+                    if (filteredDeliveries.isEmpty) {
+                      return Center(
+                        child: Text(
+                          'ไม่พบรายการที่ตรงกับคำค้นหา',
+                          style: GoogleFonts.poppins(color: white),
+                        ),
+                      );
+                    }
+
                     return ListView.separated(
                       padding: const EdgeInsets.only(bottom: 65),
-                      itemCount: deliveries.length,
+                      itemCount: filteredDeliveries.length,
                       separatorBuilder: (_, __) => const SizedBox(height: 12),
                       itemBuilder: (context, index) =>
-                          _buildDeliveryCard(deliveries[index], index),
+                          _buildDeliveryCard(
+                              context, filteredDeliveries[index], index),
                     );
                   },
                 ),
