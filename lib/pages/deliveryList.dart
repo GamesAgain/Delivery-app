@@ -29,7 +29,6 @@ class _DeliverylistPageState extends State<DeliverylistPage> {
     return FirebaseFirestore.instance
         .collection('delivery')
         .where('sender_uid', isEqualTo: currentUser.uid)
-        .orderBy('created_at', descending: true)
         .snapshots()
         .asyncMap((snapshot) async {
       final futures = snapshot.docs.map(_buildUiModel).toList();
