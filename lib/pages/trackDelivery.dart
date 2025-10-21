@@ -346,9 +346,8 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
 
     return Marker(
       point: delivery.position,
-      width: 140,
-      height: 120,
-      builder: (context) => GestureDetector(
+      alignment: Alignment.bottomCenter,
+      child: GestureDetector(
         onTap: () => _onFocusRequest(delivery),
         child: Column(
           mainAxisSize: MainAxisSize.min,
