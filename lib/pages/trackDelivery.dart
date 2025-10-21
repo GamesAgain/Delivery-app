@@ -99,9 +99,15 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
                     _pendingFocusDeliveryId!,
                   );
                   if (target != null) {
-                    _focusDeliveryOnMap(target, updateState: false);
-                    _pendingFocusDeliveryId = null;
-                    setState(() {});
+                    final previousFocus = _focusedDeliveryId;
+                    final didFocus =
+                        _focusDeliveryOnMap(target, updateState: false);
+                    if (didFocus) {
+                      _pendingFocusDeliveryId = null;
+                    }
+                    if (previousFocus != _focusedDeliveryId || didFocus) {
+                      setState(() {});
+                    }
                   }
                 }
               });
@@ -155,11 +161,6 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
   ) async {
     final data = doc.data();
     final did = (data['did'] as String?) ?? doc.id;
-    final position = _parsePosition(data);
-    if (position == null) {
-      return null;
-    }
-
     final statusCode = _parseStatusCode(data['status_code']);
     final details = await _fetchDeliveryDetails(did);
 
@@ -190,6 +191,7 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
     final updatedAt = (data['updated_at'] as Timestamp?)?.toDate() ??
         details?.updatedAt ??
         (data['last_updated'] as Timestamp?)?.toDate();
+    final position = _parsePosition(data) ?? details?.position;
 
     return _TrackedDelivery(
       did: did,
@@ -273,7 +275,10 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
   }
 
   Widget _buildMap(List<_TrackedDelivery> deliveries) {
-    final defaultCenter = deliveries.firstOrNull?.position ??
+    final positionedDeliveries = deliveries
+        .where((delivery) => delivery.position != null)
+        .toList(growable: false);
+    final defaultCenter = positionedDeliveries.firstOrNull?.position ??
         const LatLng(13.736717, 100.523186);
 
     return Container(
@@ -311,13 +316,13 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
                   userAgentPackageName: 'com.delivery.app',
                 ),
                 MarkerLayer(
-                  markers: deliveries
+                  markers: positionedDeliveries
                       .map((delivery) => _buildMarker(delivery))
                       .toList(),
                 ),
               ],
             ),
-            if (deliveries.isEmpty)
+            if (positionedDeliveries.isEmpty)
               Center(
                 child: Container(
                   padding:
@@ -327,7 +332,9 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: Text(
-                    'ยังไม่มีข้อมูลตำแหน่งแบบเรียลไทม์',
+                    deliveries.isEmpty
+                        ? 'ยังไม่มีข้อมูลการจัดส่ง'
+                        : 'รอไรเดอร์รับงาน ระบบจะอัปเดตเมื่อมีตำแหน่ง',
                     style: GoogleFonts.poppins(color: Colors.white70),
                   ),
                 ),
@@ -342,9 +349,10 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
     final isSelected = delivery.did == _focusedDeliveryId;
     final color =
         isSelected ? _green : const Color.fromARGB(220, 31, 41, 55);
+    final position = delivery.position!;
 
     return Marker(
-      point: delivery.position,
+      point: position,
       alignment: Alignment.bottomCenter,
       child: GestureDetector(
         onTap: () => _onFocusRequest(delivery),
@@ -447,6 +455,7 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
   Widget _buildDeliveryInfoCard(_TrackedDelivery delivery) {
     final isSelected = delivery.did == _focusedDeliveryId;
     final statusColor = _statusColor(delivery.statusCode);
+    final hasPosition = delivery.position != null;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 250),
@@ -585,17 +594,18 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
                 ),
               ),
               ElevatedButton.icon(
-                onPressed: () => _onFocusRequest(delivery),
-                icon: const Icon(
+                onPressed:
+                    hasPosition ? () => _onFocusRequest(delivery) : null,
+                icon: Icon(
                   BootstrapIcons.geo_alt,
-                  color: Colors.white,
+                  color: hasPosition ? Colors.white : Colors.white70,
                   size: 16,
                 ),
                 label: FittedBox(
                   child: Text(
-                    'Delivery Tracking',
+                    hasPosition ? 'Delivery Tracking' : 'รออัปเดตตำแหน่ง',
                     style: GoogleFonts.poppins(
-                      color: Colors.white,
+                      color: hasPosition ? Colors.white : Colors.white70,
                       fontWeight: FontWeight.w700,
                       fontSize: 13,
                     ),
@@ -603,6 +613,8 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _green,
+                  disabledBackgroundColor: Colors.white12,
+                  disabledForegroundColor: Colors.white54,
                   padding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                   shape: RoundedRectangleBorder(
@@ -687,7 +699,7 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
     _focusDeliveryOnMap(delivery);
   }
 
-  void _focusDeliveryOnMap(_TrackedDelivery delivery,
+  bool _focusDeliveryOnMap(_TrackedDelivery delivery,
       {bool updateState = true, double zoom = 16}) {
     if (updateState) {
       setState(() {
@@ -697,21 +709,34 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
       _focusedDeliveryId = delivery.did;
     }
 
-    if (_isMapReady) {
-      _mapController.move(delivery.position, zoom);
-    } else {
+    final position = delivery.position;
+    if (position == null) {
       _pendingFocusDeliveryId = delivery.did;
+      return false;
     }
+
+    if (_isMapReady) {
+      _mapController.move(position, zoom);
+      _pendingFocusDeliveryId = null;
+      return true;
+    }
+    _pendingFocusDeliveryId = delivery.did;
+    return false;
   }
 
   void _updateCamera(List<_TrackedDelivery> deliveries) {
-    if (deliveries.isEmpty) {
+    final positionedDeliveries = deliveries
+        .where((delivery) => delivery.position != null)
+        .toList(growable: false);
+
+    if (positionedDeliveries.isEmpty) {
+      _lastCameraSignature = null;
       return;
     }
 
-    final signature = deliveries
+    final signature = positionedDeliveries
         .map((d) =>
-            '${d.did}:${d.position.latitude.toStringAsFixed(6)},${d.position.longitude.toStringAsFixed(6)}')
+            '${d.did}:${d.position!.latitude.toStringAsFixed(6)},${d.position!.longitude.toStringAsFixed(6)}')
         .join('|');
 
     if (signature == _lastCameraSignature) {
@@ -720,13 +745,15 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
 
     _lastCameraSignature = signature;
 
-    if (deliveries.length == 1) {
-      _focusDeliveryOnMap(deliveries.first);
+    if (positionedDeliveries.length == 1) {
+      _focusDeliveryOnMap(positionedDeliveries.first, updateState: false);
       return;
     }
 
     final bounds = LatLngBounds.fromPoints(
-      deliveries.map((d) => d.position).toList(growable: false),
+      positionedDeliveries
+          .map((delivery) => delivery.position!)
+          .toList(growable: false),
     );
 
     _mapController.fitCamera(
@@ -767,6 +794,7 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
           riderUid:
               data['rider_uid'] as String? ?? data['assigned_rider_uid'] as String?,
           statusCode: _parseStatusCode(data['status_code']),
+          position: _parsePosition(data),
           updatedAt: (data['updated_at'] as Timestamp?)?.toDate() ??
               (data['status_updated_at'] as Timestamp?)?.toDate(),
         );
@@ -992,9 +1020,9 @@ class _TrackedDelivery {
   _TrackedDelivery({
     required this.did,
     required this.itemName,
-    required this.position,
     required this.statusCode,
     required this.statusLabel,
+    this.position,
     this.updatedAt,
     this.riderProfile,
     this.senderProfile,
@@ -1005,7 +1033,7 @@ class _TrackedDelivery {
 
   final String did;
   final String itemName;
-  final LatLng position;
+  final LatLng? position;
   final int statusCode;
   final String statusLabel;
   final DateTime? updatedAt;
@@ -1028,6 +1056,7 @@ class _DeliveryDetails {
     this.dropoffAddress,
     this.riderUid,
     required this.statusCode,
+    this.position,
     this.updatedAt,
   });
 
@@ -1041,6 +1070,7 @@ class _DeliveryDetails {
   final String? dropoffAddress;
   final String? riderUid;
   final int statusCode;
+  final LatLng? position;
   final DateTime? updatedAt;
 }
 
