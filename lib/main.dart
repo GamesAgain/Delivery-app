@@ -3,6 +3,7 @@ import 'package:delivery_app/models/user.dart';
 import 'package:delivery_app/pages/addNewAddress.dart';
 import 'package:delivery_app/pages/assignDetail.dart';
 import 'package:delivery_app/pages/assignmentList.dart';
+import 'package:delivery_app/pages/deliveryHistory.dart';
 import 'package:delivery_app/pages/editAddress.dart';
 import 'package:delivery_app/pages/editProfile.dart';
 import 'package:delivery_app/pages/index.dart';
@@ -176,6 +177,14 @@ class MyApp extends StatelessWidget {
               child: AssignDetailPage(did: did!),
             );
           },
+        ),
+        GoRoute(
+          path: '/deliveryHistory',
+          name: 'deliveryHistory',
+          pageBuilder: (context, state) => buildTransitionPage(
+            key: state.pageKey,
+            child: const DeliveryHistoryPage(),
+          ),
         ),
       ],
     );
