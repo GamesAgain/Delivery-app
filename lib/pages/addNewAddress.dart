@@ -16,7 +16,7 @@ enum AddressFormMode { create, edit }
 
 class AddNewAddress extends AddressFormPage {
   const AddNewAddress({super.key, String? uid})
-      : super(uid: uid, mode: AddressFormMode.create);
+    : super(uid: uid, mode: AddressFormMode.create);
 }
 
 class AddressFormPage extends StatefulWidget {
@@ -40,11 +40,14 @@ class AddressFormPage extends StatefulWidget {
 class _AddressFormPageState extends State<AddressFormPage> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final TextEditingController _labelController = TextEditingController();
-  final TextEditingController _addressNumberController = TextEditingController();
+  final TextEditingController _addressNumberController =
+      TextEditingController();
   final TextEditingController _postalCodeController = TextEditingController();
   final ThaiAddressService _thaiAddressService = ThaiAddressService();
   final Dio _dio = Dio(
-    BaseOptions(headers: const {'User-Agent': 'DeliveryApp/1.0 (https://github.com)'}),
+    BaseOptions(
+      headers: const {'User-Agent': 'DeliveryApp/1.0 (https://github.com)'},
+    ),
   );
 
   late final Future<void> _initialDataFuture;
@@ -95,9 +98,11 @@ class _AddressFormPageState extends State<AddressFormPage> {
       _addressNumberController.text = addressNumber;
     }
 
-    final postal = (extra['postalCode'] as String?) ??
+    final postal =
+        (extra['postalCode'] as String?) ??
         (extra['postcode'] as String?) ??
-        (extra['zipCode'] as String?) ?? '';
+        (extra['zipCode'] as String?) ??
+        '';
     if (postal.isNotEmpty) {
       _postalCodeController.text = postal;
     }
@@ -141,18 +146,20 @@ class _AddressFormPageState extends State<AddressFormPage> {
     }
 
     final provinceName = _sanitizeName(extra['province'] ?? extra['state']);
-    final districtName =
-        _sanitizeName(extra['district'] ?? extra['county']);
-    final subDistrictName =
-        _sanitizeName(extra['subDistrict'] ?? extra['subdistrict']);
+    final districtName = _sanitizeName(extra['district'] ?? extra['county']);
+    final subDistrictName = _sanitizeName(
+      extra['subDistrict'] ?? extra['subdistrict'],
+    );
 
     await _selectProvinceByName(provinceName, fromAutoFill: true);
     await _selectDistrictByName(districtName, fromAutoFill: true);
     await _selectSubDistrictByName(subDistrictName);
 
-    final postal = (extra['postalCode'] as String?) ??
+    final postal =
+        (extra['postalCode'] as String?) ??
         (extra['postcode'] as String?) ??
-        (extra['zipCode'] as String?) ?? '';
+        (extra['zipCode'] as String?) ??
+        '';
     if (postal.isNotEmpty) {
       _postalCodeController.text = postal;
     }
@@ -205,7 +212,7 @@ class _AddressFormPageState extends State<AddressFormPage> {
           builder: (context, snapshot) {
             final isLoading =
                 snapshot.connectionState == ConnectionState.waiting &&
-                    _provinces.isEmpty;
+                _provinces.isEmpty;
             if (isLoading) {
               return const Center(child: CircularProgressIndicator());
             }
@@ -230,10 +237,9 @@ class _AddressFormPageState extends State<AddressFormPage> {
                     const SizedBox(height: 16),
                     Text(
                       'ที่อยู่',
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleMedium
-                          ?.copyWith(color: const Color(0xFFBBB9B9)),
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: const Color(0xFFBBB9B9),
+                      ),
                     ),
                     const SizedBox(height: 8),
                     _buildPickFromMapButton(),
@@ -249,8 +255,10 @@ class _AddressFormPageState extends State<AddressFormPage> {
                         ),
                         child: Text(
                           _resolvedAddress!,
-                          style:
-                              const TextStyle(color: Colors.white70, height: 1.4),
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            height: 1.4,
+                          ),
                         ),
                       ),
                     ],
@@ -361,9 +369,7 @@ class _AddressFormPageState extends State<AddressFormPage> {
       onPressed: _handlePickFromMap,
       style: FilledButton.styleFrom(
         backgroundColor: const Color(0xFF16A34A).withOpacity(0.25),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       ),
       child: Row(
@@ -536,10 +542,7 @@ class _AddressFormPageState extends State<AddressFormPage> {
     );
   }
 
-  Widget _buildLabeledField({
-    required String label,
-    required Widget child,
-  }) {
+  Widget _buildLabeledField({required String label, required Widget child}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -587,9 +590,9 @@ class _AddressFormPageState extends State<AddressFormPage> {
         keyboardType: keyboardType,
         maxLines: maxLines,
         style: const TextStyle(color: Colors.black87),
-        decoration: _fieldDecoration(hintText: hint).copyWith(
-          alignLabelWithHint: maxLines > 1,
-        ),
+        decoration: _fieldDecoration(
+          hintText: hint,
+        ).copyWith(alignLabelWithHint: maxLines > 1),
       ),
     );
   }
@@ -605,8 +608,8 @@ class _AddressFormPageState extends State<AddressFormPage> {
 
     final latlng = result['latlng'] as Map<String, dynamic>?;
     final addressText = result['address'] as String?;
-    final components =
-        (result['addressComponents'] as Map?)?.cast<String, dynamic>();
+    final components = (result['addressComponents'] as Map?)
+        ?.cast<String, dynamic>();
 
     if (latlng != null) {
       final lat = (latlng['lat'] as num?)?.toDouble();
@@ -679,18 +682,25 @@ class _AddressFormPageState extends State<AddressFormPage> {
       ]),
     );
 
-    var matchedProvince =
-        await _selectProvinceByName(provinceName, fromAutoFill: true);
-    var matchedDistrict =
-        await _selectDistrictByName(districtName, fromAutoFill: true);
+    var matchedProvince = await _selectProvinceByName(
+      provinceName,
+      fromAutoFill: true,
+    );
+    var matchedDistrict = await _selectDistrictByName(
+      districtName,
+      fromAutoFill: true,
+    );
     var matchedSubDistrict = await _selectSubDistrictByName(subDistrictName);
 
-    final postalCode =
-        _firstNonEmpty(components, const ['postcode', 'postal_code']);
+    final postalCode = _firstNonEmpty(components, const [
+      'postcode',
+      'postal_code',
+    ]);
     List<SubDistrict> postalMatches = <SubDistrict>[];
     if (postalCode != null && postalCode.length == 5) {
-      postalMatches = await _thaiAddressService
-          .findSubDistrictsByPostalCode(postalCode);
+      postalMatches = await _thaiAddressService.findSubDistrictsByPostalCode(
+        postalCode,
+      );
     }
 
     if (postalMatches.isNotEmpty &&
@@ -704,18 +714,21 @@ class _AddressFormPageState extends State<AddressFormPage> {
       );
 
       if (fallbackSubDistrict != null) {
-        final fallbackDistrict = await _thaiAddressService
-            .getDistrictById(fallbackSubDistrict.districtId);
+        final fallbackDistrict = await _thaiAddressService.getDistrictById(
+          fallbackSubDistrict.districtId,
+        );
         Province? fallbackProvince;
         if (fallbackDistrict != null) {
-          fallbackProvince = await _thaiAddressService
-              .getProvinceById(fallbackDistrict.provinceId);
+          fallbackProvince = await _thaiAddressService.getProvinceById(
+            fallbackDistrict.provinceId,
+          );
         }
 
         if (fallbackProvince != null) {
           final provinceId = fallbackProvince.id;
-          final provinceInList =
-              _provinces.firstWhereOrNull((province) => province.id == provinceId);
+          final provinceInList = _provinces.firstWhereOrNull(
+            (province) => province.id == provinceId,
+          );
           if (provinceInList != null &&
               (_selectedProvince?.id != provinceInList.id ||
                   _districts.isEmpty)) {
@@ -726,8 +739,9 @@ class _AddressFormPageState extends State<AddressFormPage> {
 
         if (fallbackDistrict != null) {
           final districtId = fallbackDistrict.id;
-          final districtInList =
-              _districts.firstWhereOrNull((district) => district.id == districtId);
+          final districtInList = _districts.firstWhereOrNull(
+            (district) => district.id == districtId,
+          );
           if (districtInList != null &&
               (_selectedDistrict?.id != districtInList.id ||
                   _subDistricts.isEmpty)) {
@@ -736,8 +750,9 @@ class _AddressFormPageState extends State<AddressFormPage> {
           matchedDistrict ??= districtInList;
         }
 
-        final subDistrictInList = _subDistricts
-            .firstWhereOrNull((sub) => sub.id == fallbackSubDistrict.id);
+        final subDistrictInList = _subDistricts.firstWhereOrNull(
+          (sub) => sub.id == fallbackSubDistrict.id,
+        );
         if (subDistrictInList != null &&
             (_selectedSubDistrict?.id != subDistrictInList.id)) {
           _onSubDistrictChanged(subDistrictInList);
@@ -757,7 +772,11 @@ class _AddressFormPageState extends State<AddressFormPage> {
       'house',
       'building',
     ]);
-    final road = _firstNonEmpty(components, const ['road', 'street', 'highway']);
+    final road = _firstNonEmpty(components, const [
+      'road',
+      'street',
+      'highway',
+    ]);
     final neighbourhood = _firstNonEmpty(components, const [
       'residential',
       'neighbourhood',
@@ -805,12 +824,14 @@ class _AddressFormPageState extends State<AddressFormPage> {
     final normalizedDistrict = _normalize(districtName);
     if (normalizedDistrict.isNotEmpty) {
       for (final candidate in candidates) {
-        final district =
-            await _thaiAddressService.getDistrictById(candidate.districtId);
+        final district = await _thaiAddressService.getDistrictById(
+          candidate.districtId,
+        );
         if (district == null) {
           continue;
         }
-        final matchesDistrict = _normalizedStringsMatch(
+        final matchesDistrict =
+            _normalizedStringsMatch(
               normalizedDistrict,
               _normalize(district.nameTh),
             ) ||
@@ -827,22 +848,19 @@ class _AddressFormPageState extends State<AddressFormPage> {
     return candidates.first;
   }
 
-  Future<Province?> _selectProvinceByName(String? name,
-      {bool fromAutoFill = false}) async {
+  Future<Province?> _selectProvinceByName(
+    String? name, {
+    bool fromAutoFill = false,
+  }) async {
     if (name == null || name.isEmpty || _provinces.isEmpty) {
       return null;
     }
 
     final normalized = _normalize(name);
     final match = _provinces.firstWhereOrNull(
-      (element) => _normalizedStringsMatch(
-            normalized,
-            _normalize(element.nameTh),
-          ) ||
-          _normalizedStringsMatch(
-            normalized,
-            _normalize(element.nameEn),
-          ),
+      (element) =>
+          _normalizedStringsMatch(normalized, _normalize(element.nameTh)) ||
+          _normalizedStringsMatch(normalized, _normalize(element.nameEn)),
     );
 
     if (match == null) {
@@ -858,9 +876,12 @@ class _AddressFormPageState extends State<AddressFormPage> {
     return match;
   }
 
-  Future<District?> _selectDistrictByName(String? name,
-      {bool fromAutoFill = false}) async {
-    if (name == null || name.isEmpty ||
+  Future<District?> _selectDistrictByName(
+    String? name, {
+    bool fromAutoFill = false,
+  }) async {
+    if (name == null ||
+        name.isEmpty ||
         _selectedProvince == null ||
         _districts.isEmpty) {
       return null;
@@ -868,14 +889,9 @@ class _AddressFormPageState extends State<AddressFormPage> {
 
     final normalized = _normalize(name);
     final match = _districts.firstWhereOrNull(
-      (element) => _normalizedStringsMatch(
-            normalized,
-            _normalize(element.nameTh),
-          ) ||
-          _normalizedStringsMatch(
-            normalized,
-            _normalize(element.nameEn),
-          ),
+      (element) =>
+          _normalizedStringsMatch(normalized, _normalize(element.nameTh)) ||
+          _normalizedStringsMatch(normalized, _normalize(element.nameEn)),
     );
 
     if (match == null) {
@@ -892,7 +908,8 @@ class _AddressFormPageState extends State<AddressFormPage> {
   }
 
   Future<SubDistrict?> _selectSubDistrictByName(String? name) async {
-    if (name == null || name.isEmpty ||
+    if (name == null ||
+        name.isEmpty ||
         _selectedDistrict == null ||
         _subDistricts.isEmpty) {
       return null;
@@ -900,14 +917,9 @@ class _AddressFormPageState extends State<AddressFormPage> {
 
     final normalized = _normalize(name);
     final match = _subDistricts.firstWhereOrNull(
-      (element) => _normalizedStringsMatch(
-            normalized,
-            _normalize(element.nameTh),
-          ) ||
-          _normalizedStringsMatch(
-            normalized,
-            _normalize(element.nameEn),
-          ),
+      (element) =>
+          _normalizedStringsMatch(normalized, _normalize(element.nameTh)) ||
+          _normalizedStringsMatch(normalized, _normalize(element.nameEn)),
     );
 
     if (match == null) {
@@ -921,8 +933,10 @@ class _AddressFormPageState extends State<AddressFormPage> {
     return match;
   }
 
-  Future<void> _onProvinceChanged(Province province,
-      {bool fromAutoFill = false}) async {
+  Future<void> _onProvinceChanged(
+    Province province, {
+    bool fromAutoFill = false,
+  }) async {
     setState(() {
       _selectedProvince = province;
       _selectedDistrict = null;
@@ -962,8 +976,10 @@ class _AddressFormPageState extends State<AddressFormPage> {
     }
   }
 
-  Future<void> _onDistrictChanged(District district,
-      {bool fromAutoFill = false}) async {
+  Future<void> _onDistrictChanged(
+    District district, {
+    bool fromAutoFill = false,
+  }) async {
     setState(() {
       _selectedDistrict = district;
       _selectedSubDistrict = null;
@@ -976,8 +992,9 @@ class _AddressFormPageState extends State<AddressFormPage> {
     });
 
     try {
-      final subDistricts =
-          await _thaiAddressService.getSubDistricts(district.id);
+      final subDistricts = await _thaiAddressService.getSubDistricts(
+        district.id,
+      );
       if (!mounted) return;
       setState(() {
         _subDistricts = subDistricts;
@@ -1025,8 +1042,9 @@ class _AddressFormPageState extends State<AddressFormPage> {
       }
 
       final collection = FirebaseFirestore.instance.collection('addresses');
-      final existingSnapshot =
-          await collection.where('uid', isEqualTo: uid).get();
+      final existingSnapshot = await collection
+          .where('uid', isEqualTo: uid)
+          .get();
       final isOnlyAddress = existingSnapshot.docs.length <= 1;
 
       if (_isEditing) {
@@ -1037,8 +1055,9 @@ class _AddressFormPageState extends State<AddressFormPage> {
 
         final shouldSetDefault = _setAsDefault || isOnlyAddress;
         if (shouldSetDefault) {
-          for (final doc in existingSnapshot.docs
-              .where((element) => element.id != current.id)) {
+          for (final doc in existingSnapshot.docs.where(
+            (element) => element.id != current.id,
+          )) {
             await doc.reference.update({'is_default': 1});
           }
         }
@@ -1065,16 +1084,15 @@ class _AddressFormPageState extends State<AddressFormPage> {
 
         await collection.doc(current.id).update(data);
       } else {
-        final shouldSetDefault =
-            _setAsDefault || existingSnapshot.docs.isEmpty;
+        final shouldSetDefault = _setAsDefault || existingSnapshot.docs.isEmpty;
 
         final docRef = collection.doc();
         final now = FieldValue.serverTimestamp();
 
         if (_setAsDefault) {
-          for (final doc in existingSnapshot.docs
-              .where((element) =>
-                  (element.data()['is_default'] as num?)?.toInt() == 0)) {
+          for (final doc in existingSnapshot.docs.where(
+            (element) => (element.data()['is_default'] as num?)?.toInt() == 0,
+          )) {
             await doc.reference.update({'is_default': 1});
           }
         }
@@ -1140,7 +1158,7 @@ class _AddressFormPageState extends State<AddressFormPage> {
       _postalCodeController.text.trim(),
     ];
     return parts
-        .where((element) => element != null && element!.isNotEmpty)
+        .where((element) => element != null && element.isNotEmpty)
         .join(' ');
   }
 
@@ -1155,9 +1173,7 @@ class _AddressFormPageState extends State<AddressFormPage> {
       _selectedDistrict?.nameTh,
       _selectedProvince?.nameTh,
       'ประเทศไทย',
-    ]
-        .where((element) => element != null && element!.isNotEmpty)
-        .join(' ');
+    ].where((element) => element != null && element.isNotEmpty).join(' ');
 
     if (query.isEmpty) {
       return null;
@@ -1203,8 +1219,10 @@ class _AddressFormPageState extends State<AddressFormPage> {
       RegExp(r'^(Province|Prov\.)\s+', caseSensitive: false),
       RegExp(r'^(Amphoe|King\s*Amphoe|Amphur)\s+', caseSensitive: false),
       RegExp(r'^(District|Dist\.)\s+', caseSensitive: false),
-      RegExp(r'^(Tambon|Sub[-\s]*district|Subdistrict|Khwaeng)\s+',
-          caseSensitive: false),
+      RegExp(
+        r'^(Tambon|Sub[-\s]*district|Subdistrict|Khwaeng)\s+',
+        caseSensitive: false,
+      ),
       RegExp(r'^(Mueang|Muang)\s+', caseSensitive: false),
       RegExp(r'^(City\s*of)\s+', caseSensitive: false),
     ];
@@ -1216,8 +1234,10 @@ class _AddressFormPageState extends State<AddressFormPage> {
     final suffixPatterns = <RegExp>[
       RegExp(r'\s+(Province|Prov\.|Chang\s*Wat)$', caseSensitive: false),
       RegExp(r'\s+(District|Dist\.|County|City)$', caseSensitive: false),
-      RegExp(r'\s+(Sub[-\s]*district|Subdistrict|Tambon|Khwaeng)$',
-          caseSensitive: false),
+      RegExp(
+        r'\s+(Sub[-\s]*district|Subdistrict|Tambon|Khwaeng)$',
+        caseSensitive: false,
+      ),
       RegExp(r'\s+(Municipality|Borough|Township)$', caseSensitive: false),
     ];
 
