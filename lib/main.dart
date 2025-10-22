@@ -1,6 +1,7 @@
 import 'package:delivery_app/models/address.dart';
 import 'package:delivery_app/models/user.dart';
 import 'package:delivery_app/pages/addNewAddress.dart';
+import 'package:delivery_app/pages/assignDetail.dart';
 import 'package:delivery_app/pages/assignmentList.dart';
 import 'package:delivery_app/pages/editAddress.dart';
 import 'package:delivery_app/pages/editProfile.dart';
@@ -162,6 +163,17 @@ class MyApp extends StatelessWidget {
             return buildTransitionPage(
               key: state.pageKey,
               child: Assignmentlist(uid: uid),
+            );
+          },
+        ),
+        GoRoute(
+          path: '/assignmentDetail',
+          name: 'assignmentDetail',
+          pageBuilder: (context, state) {
+            final did = state.uri.queryParameters['did'];
+            return buildTransitionPage(
+              key: state.pageKey,
+              child: AssignDetailPage(did: did!),
             );
           },
         ),
