@@ -2,9 +2,10 @@ import 'package:bootstrap_icons/bootstrap_icons.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:geolocator/geolocator.dart';
+import 'dart:async';
 
 class Assignmentlist extends StatefulWidget {
   final String? uid;
@@ -21,9 +22,141 @@ class _AssignmentlistState extends State<Assignmentlist> {
 
   final Map<String, Future<_UserProfile?>> _userCache = {};
 
+  //ตัวแปรสำหรับจัดการ Stream ของ Location
+  StreamSubscription<Position>? _locationSubscription;
+
+  //เริ่มติดตามตำแหน่งเมื่อเปิดหน้า
+  @override
+  void initState() {
+    super.initState();
+    _initLocationService();
+  }
+
+  //หยุดติดตามตำแหน่งเมื่อปิดหน้า
   @override
   void dispose() {
+    _locationSubscription?.cancel();
+    _userCache.clear();
     super.dispose();
+  }
+
+  // ‼ 5. ฟังก์ชันใหม่: เริ่มต้นบริการตำแหน่ง
+  void _initLocationService() async {
+    // 5.1 ตรวจสอบ Permission
+    bool permissionGranted = await _handleLocationPermission();
+    if (!permissionGranted) {
+      // ถ้าไม่อนุญาต, อาจจะแสดง Dialog แจ้งเตือน
+      print("Location permission denied.");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Location permission denied.')),
+        );
+      }
+      return;
+    }
+
+    // 5.2 ตั้งค่าความแม่นยำและระยะทาง
+    // อัปเดตทุกครั้งที่ขยับ 10 เมตร
+    const LocationSettings locationSettings = LocationSettings(
+      accuracy: LocationAccuracy.high,
+      distanceFilter: 10,
+    );
+
+    // 5.3 เริ่มฟังการอัปเดตตำแหน่ง
+    _locationSubscription =
+        Geolocator.getPositionStream(locationSettings: locationSettings).listen(
+          (Position position) {
+            // เมื่อได้ตำแหน่งใหม่, ให้อัปเดตไปที่ Firestore
+            _updateRiderLocation(position);
+          },
+          onError: (error) {
+            print('Error getting location stream: $error');
+          },
+        );
+  }
+
+  // ‼ 6. ฟังก์ชันใหม่: อัปเดตตำแหน่งไปที่ Firestore
+  void _updateRiderLocation(Position position) {
+    final rider = FirebaseAuth.instance.currentUser;
+    if (rider == null) {
+      // ถ้าจู่ๆ logout, ให้หยุดติดตาม
+      _locationSubscription?.cancel();
+      return;
+    }
+
+    final riderUid = rider.uid;
+
+    // ใช้ .set() และ doc(riderUid)
+    // มันจะสร้างเอกสารใหม่ถ้ายังไม่มี, หรืออัปเดตทับถ้ามีอยู่แล้ว
+    FirebaseFirestore.instance
+        .collection('RiderLocation')
+        .doc(riderUid) // ใช้ ID ของไรเดอร์เป็น ID เอกสาร
+        .set(
+          {
+            'rid': riderUid,
+            'lat': position.latitude,
+            'lng': position.longitude,
+            'updated_at': FieldValue.serverTimestamp(),
+          },
+          SetOptions(
+            merge: true,
+          ), // merge:true ปลอดภัยกว่า, จะไม่ลบ field อื่นถ้ามี
+        )
+        .catchError((error) {
+          print('Failed to update rider location: $error');
+        });
+  }
+
+  // ‼ 7. ฟังก์ชันใหม่: จัดการเรื่องขอ Permission
+  Future<bool> _handleLocationPermission() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    // ตรวจสอบว่าเปิด GPS (Location Service) ไว้หรือไม่
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Location services are disabled. Please enable them.',
+            ),
+          ),
+        );
+      }
+      return false;
+    }
+
+    // ตรวจสอบสถานะ Permission
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Location permissions are denied')),
+          );
+        }
+        return false;
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      // ผู้ใช้ปฏิเสธถาวร, ต้องไปเปิดเองใน Settings
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Location permissions are permanently denied, we cannot request permissions.',
+            ),
+          ),
+        );
+      }
+      return false;
+    }
+
+    // ถ้ามาถึงตรงนี้ได้ คือได้รับอนุญาตแล้ว
+    return true;
   }
 
   Stream<List<_DeliveryUiModel>> _deliveryStream() {
@@ -51,9 +184,9 @@ class _AssignmentlistState extends State<Assignmentlist> {
     final receiverUid = data['receiver_uid'] as String?;
 
     final senderProfile = await _fetchUserProfile(senderUid);
+    // ‼ senderaddress ตอนนี้มี lat, lng แล้ว
     final senderaddress = await fetchUserDefaultAddress(senderUid);
     final receiverProfile = await _fetchUserProfile(receiverUid);
-    final durationText = await _computeDeliveryDuration(deliveryId);
 
     return _DeliveryUiModel(
       did: deliveryId,
@@ -64,9 +197,11 @@ class _AssignmentlistState extends State<Assignmentlist> {
       senderName: senderProfile?.username ?? 'ไม่พบข้อมูล',
       receiverName: receiverProfile?.username ?? 'ไม่พบข้อมูล',
       statusCode: _parseStatusCode(data['status_code']),
-      deliveryDurationLabel: durationText,
-      note: (data['note']),
+      note: (data['note'] as String?) ?? '', // ‼ ป้องกัน null
       senderaddress: senderaddress?.fulladdress,
+      // ‼ เพิ่ม: ส่ง lat/lng ของผู้ส่งไปเก็บใน Model
+      senderLat: senderaddress?.lat ?? 0.0,
+      senderLng: senderaddress?.lng ?? 0.0,
     );
   }
 
@@ -109,7 +244,7 @@ class _AssignmentlistState extends State<Assignmentlist> {
     final qs = await FirebaseFirestore.instance
         .collection('addresses')
         .where('uid', isEqualTo: uid)
-        .where('is_default', isEqualTo: 0)
+        .where('is_default', isEqualTo: 0) // (คงไว้ตามที่คุณต้องการ)
         .limit(1)
         .get();
 
@@ -117,56 +252,18 @@ class _AssignmentlistState extends State<Assignmentlist> {
 
     final data = qs.docs.first.data();
     final address = (data['fullAddress'] as String?)?.trim();
-    return address == null ? null : UserAddress(fulladdress: address);
+
+    // ‼ เพิ่ม: ดึง lat/lng (แปลงเป็น double)
+    final lat = (data['lat'] as num?)?.toDouble() ?? 0.0;
+    final lng = (data['lng'] as num?)?.toDouble() ?? 0.0;
+
+    if (address == null) return null;
+
+    // ‼ แก้ไข: คืนค่า UserAddress ที่มี lat/lng ด้วย
+    return UserAddress(fulladdress: address, lat: lat, lng: lng);
   }
 
-  Future<String> _computeDeliveryDuration(String deliveryId) async {
-    try {
-      final historySnapshot = await FirebaseFirestore.instance
-          .collection('delivery_status_history')
-          .where('did', isEqualTo: deliveryId)
-          .orderBy('created_at')
-          .get();
-
-      if (historySnapshot.docs.length < 2) {
-        return 'In progress';
-      }
-
-      final firstTimestamp =
-          historySnapshot.docs.first.data()['created_at'] as Timestamp?;
-      final lastTimestamp =
-          historySnapshot.docs.last.data()['created_at'] as Timestamp?;
-
-      if (firstTimestamp == null || lastTimestamp == null) {
-        return 'N/A';
-      }
-
-      final duration = lastTimestamp.toDate().difference(
-        firstTimestamp.toDate(),
-      );
-      return _formatDuration(duration);
-    } catch (_) {
-      return 'N/A';
-    }
-  }
-
-  String _formatDuration(Duration duration) {
-    if (duration.inMinutes <= 0) {
-      return 'Just started';
-    }
-
-    final hours = duration.inHours;
-    final minutes = duration.inMinutes.remainder(60);
-    if (hours == 0) {
-      return '$minutes mins';
-    }
-
-    if (minutes == 0) {
-      return '$hours hrs';
-    }
-
-    return '$hours hrs $minutes mins';
-  }
+  // ‼ ลบ _formatDuration และ _computeDeliveryDuration (เพราะไม่ได้ใช้แล้ว)
 
   Widget _buildDeliveryCard(
     BuildContext context,
@@ -320,11 +417,14 @@ class _AssignmentlistState extends State<Assignmentlist> {
                                   ),
                                 ),
                                 Text(
-                                  'คำอธิบาย : ${delivery.note}',
+                                  // ‼ แก้ไข: ใช้ note ที่กัน null แล้ว
+                                  'คำอธิบาย : ${delivery.note.isEmpty ? '-' : delivery.note}',
                                   style: TextStyle(
                                     color: subtitleColor,
                                     fontSize: 12,
                                   ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ],
                             ),
@@ -359,6 +459,7 @@ class _AssignmentlistState extends State<Assignmentlist> {
                 color: Color(0xFF16A34A),
                 size: 12,
               ),
+              const SizedBox(width: 4), // ‼ เพิ่มช่องว่าง
               Expanded(
                 child: Text(
                   delivery.senderaddress ?? '',
@@ -373,35 +474,100 @@ class _AssignmentlistState extends State<Assignmentlist> {
             children: [
               trackButton,
               const Spacer(),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+              // ‼ -----------------------------------------------------------
+              // ‼ แก้ไข: เปลี่ยนจาก Column ธรรมดา เป็น StreamBuilder
+              // ‼ -----------------------------------------------------------
+              StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                // 1. ดึง ID ไรเดอร์ที่ล็อกอินอยู่
+                stream: FirebaseFirestore.instance
+                    .collection('RiderLocation')
+                    .doc(FirebaseAuth.instance.currentUser?.uid)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  String distanceText = '...';
+                  Color distanceColor = green;
+
+                  // 2. ตรวจสอบว่ามีพิกัดผู้ส่งหรือไม่
+                  if (delivery.senderLat == 0.0 && delivery.senderLng == 0.0) {
+                    distanceText = 'No Sender GPS';
+                    distanceColor = Colors.orange;
+                  }
+                  // 3. ตรวจสอบสถานะ Stream ของไรเดอร์
+                  else if (snapshot.connectionState ==
+                      ConnectionState.waiting) {
+                    distanceText = '...';
+                  } else if (snapshot.hasError ||
+                      !snapshot.hasData ||
+                      snapshot.data?.data() == null) {
+                    distanceText = 'No Rider GPS';
+                    distanceColor = Colors.red;
+                  } else {
+                    // 4. ดึงพิกัดไรเดอร์
+                    final data = snapshot.data!.data()!;
+                    final riderLat = (data['lat'] as num?)?.toDouble();
+                    final riderLng = (data['lng'] as num?)?.toDouble();
+
+                    if (riderLat == null || riderLng == null) {
+                      distanceText = 'No Rider GPS';
+                      distanceColor = Colors.red;
+                    } else {
+                      // 5. คำนวณระยะทาง (สำเร็จ)
+                      double distanceInMeters = Geolocator.distanceBetween(
+                        riderLat,
+                        riderLng,
+                        delivery.senderLat,
+                        delivery.senderLng,
+                      );
+
+                      // 6. จัดรูปแบบการแสดงผล
+                      if (distanceInMeters < 1000) {
+                        distanceText =
+                            '${distanceInMeters.toStringAsFixed(0)} m';
+                      } else {
+                        double distanceInKm = distanceInMeters / 1000.0;
+                        distanceText = '${distanceInKm.toStringAsFixed(1)} km';
+                      }
+                    }
+                  }
+
+                  // 7. คืนค่า UI (เหมือนเดิม แต่เปลี่ยนค่า Text)
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(
-                        BootstrapIcons.clock,
-                        color: secondaryTextColor,
-                        size: 16,
+                      Row(
+                        children: [
+                          Icon(
+                            BootstrapIcons.cursor_fill,
+                            color: secondaryTextColor,
+                            size: 16,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Delivery Distance',
+                            style: GoogleFonts.poppins(
+                              color: secondaryTextColor,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 6),
-                      Text(
-                        'Delivery Distance',
-                        style: GoogleFonts.poppins(
-                          color: secondaryTextColor,
-                          fontSize: 12,
+                      Align(
+                        alignment: Alignment.center,
+                        child: Text(
+                          distanceText, // ‼ แสดงผลระยะทางที่คำนวณได้
+                          style: GoogleFonts.poppins(
+                            color: distanceColor,
+                            fontSize: 13,
+                          ),
                         ),
                       ),
                     ],
-                  ),
-                  Align(
-                    alignment: Alignment.center,
-                    child: Text(
-                      delivery.deliveryDurationLabel,
-                      style: GoogleFonts.poppins(color: green, fontSize: 13),
-                    ),
-                  ),
-                ],
+                  );
+                },
               ),
+              // ‼ -----------------------------------------------------------
+              // ‼ จบส่วน StreamBuilder
+              // ‼ -----------------------------------------------------------
             ],
           ),
           const SizedBox(height: 4),
@@ -550,7 +716,7 @@ class _AssignmentlistState extends State<Assignmentlist> {
               // ---------- List Delivery (เลื่อนเฉพาะส่วนนี้) ----------
               const SizedBox(height: 12),
 
-              // ใช้ SizedBox จำกัดความสูง แล้วให้ ListView ภายในเลื่อน
+              // ใช้ SizedBox จำกัดความสูง (คงไว้ตามที่คุณต้องการ)
               SizedBox(
                 height: MediaQuery.of(context).size.height * 0.68,
                 child: StreamBuilder<List<_DeliveryUiModel>>(
@@ -605,9 +771,10 @@ class _DeliveryUiModel {
     required this.senderName,
     required this.receiverName,
     required this.statusCode,
-    required this.deliveryDurationLabel,
     required this.note,
     required this.senderaddress,
+    required this.senderLat, // ‼ เพิ่ม
+    required this.senderLng, // ‼ เพิ่ม
   });
 
   final String did;
@@ -616,9 +783,10 @@ class _DeliveryUiModel {
   final String senderName;
   final String receiverName;
   final int statusCode;
-  final String deliveryDurationLabel;
   final String note;
   final String? senderaddress;
+  final double senderLat; // ‼ เพิ่ม
+  final double senderLng; // ‼ เพิ่ม
 
   int get clampedStatusCode => statusCode.clamp(1, 4);
 
@@ -634,9 +802,11 @@ class _UserProfile {
 }
 
 class UserAddress {
-  UserAddress({required this.fulladdress, this.lat = 0, this.lng = 0});
+  // ‼ แก้ไข: เปลี่ยนค่าเริ่มต้นเป็น 0.0 และประเภทเป็น double
+  UserAddress({required this.fulladdress, this.lat = 0.0, this.lng = 0.0});
 
   final String fulladdress;
-  final int lat;
-  final int lng;
+  // ‼ แก้ไข: เปลี่ยนเป็น double
+  final double lat;
+  final double lng;
 }
