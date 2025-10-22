@@ -1,6 +1,8 @@
+import 'package:bootstrap_icons/bootstrap_icons.dart';
 import 'package:delivery_app/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:latlong2/latlong.dart';
 
 class DeliveryHistoryPage extends StatefulWidget {
@@ -391,6 +393,19 @@ class _DeliveryHistoryPageState extends State<DeliveryHistoryPage> {
                           ),
                           const SizedBox(height: 24),
                           Text(
+                            'สถานะการจัดส่ง',
+                            style: textTheme.titleSmall?.copyWith(
+                              color: AppColors.onBg,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildProgressIndicators(
+                            _currentStatusCode,
+                            true,
+                          ),
+                          const SizedBox(height: 24),
+                          Text(
                             'ประวัติการจัดส่ง',
                             style: textTheme.titleMedium?.copyWith(
                               color: AppColors.onBg,
@@ -434,6 +449,96 @@ class _DeliveryHistoryPageState extends State<DeliveryHistoryPage> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildProgressIndicators(int statusCode, bool isDarkCard) {
+    const totalSteps = 4;
+    final children = <Widget>[];
+
+    for (var i = 0; i < totalSteps; i++) {
+      final stepIndex = i + 1;
+      final isActive = statusCode >= stepIndex;
+      children.add(
+        _buildStatusStep(
+          stepIndex: i,
+          isActive: isActive,
+          isDarkCard: isDarkCard,
+        ),
+      );
+
+      if (i < totalSteps - 1) {
+        final connectorActive = statusCode > stepIndex;
+        children.add(_buildConnector(connectorActive, isDarkCard));
+      }
+    }
+
+    return Row(children: children);
+  }
+
+  Widget _buildStatusStep({
+    required int stepIndex,
+    required bool isActive,
+    required bool isDarkCard,
+  }) {
+    final backgroundColor = isActive
+        ? AppColors.primary
+        : (isDarkCard ? Colors.white24 : const Color(0xFFE2E8F0));
+    final inactiveIconColor = isDarkCard
+        ? Colors.white70
+        : const Color(0xFF64748B);
+
+    Widget icon;
+    switch (stepIndex) {
+      case 0:
+        icon = Icon(
+          BootstrapIcons.box_seam,
+          size: 14,
+          color: isActive ? Colors.white : inactiveIconColor,
+        );
+        break;
+      case 1:
+      case 2:
+        icon = Icon(
+          Icons.pedal_bike,
+          size: 14,
+          color: isActive ? Colors.white : inactiveIconColor,
+        );
+        break;
+      default:
+        icon = SvgPicture.asset(
+          'assets/icons/packageCorrect.svg',
+          width: 14,
+          height: 14,
+          colorFilter: isActive
+              ? null
+              : ColorFilter.mode(inactiveIconColor, BlendMode.srcIn),
+        );
+        break;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 3),
+      child: CircleAvatar(
+        radius: 12,
+        backgroundColor: backgroundColor,
+        child: icon,
+      ),
+    );
+  }
+
+  Widget _buildConnector(bool isActive, bool isDarkCard) {
+    final color = isActive
+        ? const Color(0xFF2B9F5C)
+        : (isDarkCard ? Colors.white24 : const Color(0xFFE2E8F0));
+    return Expanded(
+      child: Container(
+        height: 6,
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(12),
+        ),
+      ),
     );
   }
 }
