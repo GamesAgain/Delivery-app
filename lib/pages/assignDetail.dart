@@ -33,7 +33,6 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
     return UserAddress.fromSnap(snap);
   }
 
-  // ----- UI -----
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -110,9 +109,7 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
                         child: Align(
                           alignment: Alignment.topLeft,
                           child: Text(
-                            (d.note.isEmpty)
-                                ? '— ไม่มีโน้ตเพิ่มเติม —'
-                                : d.note,
+                            'คำอธิบาย: ${d.note.isEmpty ? '— ไม่มีโน้ตเพิ่มเติม —' : d.note}',
                             style: TextStyle(fontSize: 12),
                           ),
                         ),
@@ -151,15 +148,7 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
                       const SizedBox(height: 28),
 
                       FilledButton.icon(
-                        onPressed: () {
-                          FirebaseFirestore.instance
-                              .collection('delivery')
-                              .doc(d.did)
-                              .update({
-                                'status': 'ไรเดอร์รับงาน',
-                                'status_code': 2,
-                              });
-                        },
+                        onPressed: riderAccepted,
                         style: FilledButton.styleFrom(
                           backgroundColor: AppColors.primary,
                           minimumSize: const Size.fromHeight(56),
@@ -187,6 +176,10 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
         ),
       ),
     );
+  }
+
+  void riderAccepted() async {
+
   }
 }
 
