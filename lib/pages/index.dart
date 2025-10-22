@@ -1,5 +1,6 @@
 import 'package:bootstrap_icons/bootstrap_icons.dart';
 import 'package:delivery_app/models/user.dart';
+import 'package:delivery_app/pages/assignmentList.dart';
 import 'package:delivery_app/pages/deliveryList.dart';
 import 'package:delivery_app/pages/profile.dart';
 import 'package:delivery_app/pages/shipment.dart';
@@ -27,7 +28,7 @@ class _IndexState extends State<Index> {
 
   // เพจแต่ละแท็บ (ตัวอย่าง placeholder — ใส่หน้าแท้จริงของคุณแทนได้เลย)
   List<Widget> get pages => [
-    HomeTab(),
+    HomeTab(widget.profile),
     ShipmentTab(),
     ProfileTab(uid: widget.uid, profile: widget.profile),
   ];
@@ -185,14 +186,22 @@ class NavItem extends StatelessWidget {
 
 /// -------------------- ตัวอย่างเพจของแต่ละแท็บ (แทนที่ด้วยหน้าจริงของคุณได้) --------------------
 class HomeTab extends StatelessWidget {
-  const HomeTab();
+  final Users profile;
+  const HomeTab(this.profile);
 
   @override
   Widget build(BuildContext context) {
-    return const ColoredBox(
-      color: _IndexState.kDarkBg,
-      child: DeliverylistPage(),
-    );
+    if (profile.role != "ผู้ใช้") {
+      return ColoredBox(
+        color: _IndexState.kDarkBg,
+        child: Assignmentlist(uid: profile.uid),
+      );
+    } else {
+      return const ColoredBox(
+        color: _IndexState.kDarkBg,
+        child: DeliverylistPage(),
+      );
+    }
   }
 }
 

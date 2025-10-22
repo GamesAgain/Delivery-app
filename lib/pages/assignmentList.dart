@@ -1,50 +1,29 @@
 import 'package:bootstrap_icons/bootstrap_icons.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:delivery_app/pages/addDelivery.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import 'package:delivery_app/pages/trackDelivery.dart';
-
-class DeliverylistPage extends StatefulWidget {
-  const DeliverylistPage({super.key});
+class Assignmentlist extends StatefulWidget {
+  final String? uid;
+  const Assignmentlist({super.key, this.uid});
 
   @override
-  State<DeliverylistPage> createState() => _DeliverylistPageState();
+  State<Assignmentlist> createState() => _AssignmentlistState();
 }
 
-class _DeliverylistPageState extends State<DeliverylistPage> {
+class _AssignmentlistState extends State<Assignmentlist> {
   static const Color bg = Color(0xFF0B0F19); // พื้นหลังเข้ม
   static const Color white = Colors.white; // ไอคอน/ข้อความปิด
   static const Color green = Color(0xFF16A34A); // เขียวแท็บที่เลือก
 
   final Map<String, Future<_UserProfile?>> _userCache = {};
-  final TextEditingController _searchController = TextEditingController();
-  String _searchTerm = '';
 
   @override
   void dispose() {
-    _searchController.dispose();
     super.dispose();
-  }
-
-  void _openGlobalTracking(BuildContext context) {
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => const TrackDeliveryPage()));
-  }
-
-  void _openDeliveryTracking(BuildContext context, _DeliveryUiModel delivery) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => TrackDeliveryPage(
-          deliveryId: delivery.did,
-          itemName: delivery.itemName,
-        ),
-      ),
-    );
   }
 
   Stream<List<_DeliveryUiModel>> _deliveryStream() {
@@ -55,7 +34,7 @@ class _DeliverylistPageState extends State<DeliverylistPage> {
 
     return FirebaseFirestore.instance
         .collection('delivery')
-        .where('sender_uid', isEqualTo: currentUser.uid)
+        .where('status_code', isEqualTo: 1)
         .snapshots()
         .asyncMap((snapshot) async {
           final futures = snapshot.docs.map(_buildUiModel).toList();
@@ -72,6 +51,7 @@ class _DeliverylistPageState extends State<DeliverylistPage> {
     final receiverUid = data['receiver_uid'] as String?;
 
     final senderProfile = await _fetchUserProfile(senderUid);
+    final senderaddress = await fetchUserDefaultAddress(senderUid);
     final receiverProfile = await _fetchUserProfile(receiverUid);
     final durationText = await _computeDeliveryDuration(deliveryId);
 
@@ -85,6 +65,8 @@ class _DeliverylistPageState extends State<DeliverylistPage> {
       receiverName: receiverProfile?.username ?? 'ไม่พบข้อมูล',
       statusCode: _parseStatusCode(data['status_code']),
       deliveryDurationLabel: durationText,
+      note: (data['note']),
+      senderaddress: senderaddress?.fulladdress,
     );
   }
 
@@ -119,6 +101,23 @@ class _DeliverylistPageState extends State<DeliverylistPage> {
         return null;
       }
     });
+  }
+
+  Future<UserAddress?> fetchUserDefaultAddress(String? uid) async {
+    if (uid == null || uid.isEmpty) return null;
+
+    final qs = await FirebaseFirestore.instance
+        .collection('addresses')
+        .where('uid', isEqualTo: uid)
+        .where('is_default', isEqualTo: 0)
+        .limit(1)
+        .get();
+
+    if (qs.docs.isEmpty) return null;
+
+    final data = qs.docs.first.data();
+    final address = (data['fullAddress'] as String?)?.trim();
+    return address == null ? null : UserAddress(fulladdress: address);
   }
 
   Future<String> _computeDeliveryDuration(String deliveryId) async {
@@ -201,7 +200,9 @@ class _DeliverylistPageState extends State<DeliverylistPage> {
               ),
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             ),
-            onPressed: () => _openDeliveryTracking(context, delivery),
+            onPressed: () {
+              // context.pushNamed(name);
+            },
             child: Row(
               children: [
                 const Icon(
@@ -213,7 +214,7 @@ class _DeliverylistPageState extends State<DeliverylistPage> {
                 FittedBox(
                   fit: BoxFit.scaleDown,
                   child: Text(
-                    'Delivery Tracking',
+                    'Accept Delivery',
                     style: GoogleFonts.poppins(
                       color: white,
                       fontWeight: FontWeight.w700,
@@ -234,7 +235,7 @@ class _DeliverylistPageState extends State<DeliverylistPage> {
               ),
               padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
             ),
-            onPressed: () => _openDeliveryTracking(context, delivery),
+            onPressed: () {},
             child: Row(
               children: [
                 const Icon(
@@ -246,7 +247,7 @@ class _DeliverylistPageState extends State<DeliverylistPage> {
                 FittedBox(
                   fit: BoxFit.scaleDown,
                   child: Text(
-                    'Delivery Tracking',
+                    'Accept Tracking',
                     style: GoogleFonts.poppins(
                       color: const Color(0xFF16A34A),
                       fontWeight: FontWeight.bold,
@@ -311,7 +312,7 @@ class _DeliverylistPageState extends State<DeliverylistPage> {
                                   ),
                                 ),
                                 Text(
-                                  'ผู้รับ : ${delivery.receiverName}',
+                                  'คำอธิบาย : ${delivery.note}',
                                   style: TextStyle(
                                     color: subtitleColor,
                                     fontSize: 12,
@@ -343,8 +344,19 @@ class _DeliverylistPageState extends State<DeliverylistPage> {
             ],
           ),
           const SizedBox(height: 16),
-          _buildProgressIndicators(delivery.clampedStatusCode, isDarkCard),
-          const SizedBox(height: 14),
+          Row(
+            children: [
+              const Icon(BootstrapIcons.geo_alt_fill),
+              Expanded(
+                child: Text(
+                  delivery.senderaddress ?? '',
+                  style: TextStyle(color: subtitleColor),
+                  maxLines: 2,
+                  overflow: TextOverflow.clip,
+                ),
+              ),
+            ],
+          ),
           Row(
             children: [
               trackButton,
@@ -361,7 +373,7 @@ class _DeliverylistPageState extends State<DeliverylistPage> {
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        'Delivery Time',
+                        'Delivery Distance',
                         style: GoogleFonts.poppins(
                           color: secondaryTextColor,
                           fontSize: 12,
@@ -480,7 +492,6 @@ class _DeliverylistPageState extends State<DeliverylistPage> {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        // ========= HEADER เดิม =========
         Container(
           width: double.infinity,
           decoration: BoxDecoration(
@@ -589,145 +600,6 @@ class _DeliverylistPageState extends State<DeliverylistPage> {
                   ],
                 ),
                 const SizedBox(height: 16),
-
-                // -- SearchBar --
-                Container(
-                  height: 56,
-                  decoration: BoxDecoration(
-                    color: const Color(0x1416A34A),
-                    borderRadius: BorderRadius.circular(28),
-                    border: Border.all(color: const Color(0x3316A34A)),
-                  ),
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: TextField(
-                    controller: _searchController,
-                    onChanged: (value) => setState(
-                      () => _searchTerm = value.toLowerCase().trim(),
-                    ),
-                    cursorColor: green,
-                    style: GoogleFonts.poppins(
-                      color: Colors.white,
-                      fontSize: 14,
-                    ),
-                    textInputAction: TextInputAction.search,
-                    decoration: InputDecoration(
-                      icon: const Icon(
-                        BootstrapIcons.search,
-                        color: Colors.white70,
-                      ),
-                      hintText: 'Find your Delivery',
-                      hintStyle: GoogleFonts.poppins(
-                        color: Colors.white60,
-                        fontSize: 13,
-                      ),
-                      border: InputBorder.none,
-                      suffixIcon: _searchTerm.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(
-                                BootstrapIcons.x,
-                                color: Colors.white60,
-                                size: 18,
-                              ),
-                              onPressed: () {
-                                _searchController.clear();
-                                setState(() => _searchTerm = '');
-                              },
-                            )
-                          : null,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                // -- Buttons --
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF16A34A),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                      ),
-                      onPressed: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => const AddDeliveryPage(),
-                          ),
-                        );
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                        child: Row(
-                          children: [
-                            CircleAvatar(
-                              radius: 20,
-                              backgroundColor: bg,
-                              child: SvgPicture.asset(
-                                'assets/icons/plus_Delivery.svg',
-                                width: 22,
-                                height: 22,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Text(
-                                'New Delivery',
-                                style: GoogleFonts.poppins(
-                                  color: white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    OutlinedButton(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFF16A34A),
-                        side: const BorderSide(color: Color(0xFF16A34A)),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                      ),
-                      onPressed: () => _openGlobalTracking(context),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                        child: Row(
-                          children: [
-                            CircleAvatar(
-                              radius: 20,
-                              backgroundColor: green,
-                              child: SvgPicture.asset(
-                                'assets/icons/tracking.svg',
-                                width: 26,
-                                height: 26,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Text(
-                                'Track Delivery',
-                                style: GoogleFonts.poppins(
-                                  color: white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
               ],
             ),
           ),
@@ -758,7 +630,7 @@ class _DeliverylistPageState extends State<DeliverylistPage> {
 
               // ใช้ SizedBox จำกัดความสูง แล้วให้ ListView ภายในเลื่อน
               SizedBox(
-                height: MediaQuery.of(context).size.height * 0.55,
+                height: MediaQuery.of(context).size.height * 0.68,
                 child: StreamBuilder<List<_DeliveryUiModel>>(
                   stream: _deliveryStream(),
                   builder: (context, snapshot) {
@@ -775,51 +647,26 @@ class _DeliverylistPageState extends State<DeliverylistPage> {
                       );
                     }
 
-                    final deliveries =
-                        snapshot.data ?? const <_DeliveryUiModel>[];
-                    final searchQuery = _searchTerm;
-                    final filteredDeliveries = searchQuery.isEmpty
-                        ? deliveries
-                        : deliveries
-                              .where(
-                                (delivery) => delivery.itemName
-                                    .toLowerCase()
-                                    .contains(searchQuery),
-                              )
-                              .toList();
-
+                    final deliveries = snapshot.data ?? <_DeliveryUiModel>[];
                     if (deliveries.isEmpty) {
                       return Center(
                         child: Text(
-                          'ยังไม่มีรายการจัดส่ง',
-                          style: GoogleFonts.poppins(color: white),
-                        ),
-                      );
-                    }
-
-                    if (filteredDeliveries.isEmpty) {
-                      return Center(
-                        child: Text(
-                          'ไม่พบรายการที่ตรงกับคำค้นหา',
+                          'No deliveries',
                           style: GoogleFonts.poppins(color: white),
                         ),
                       );
                     }
 
                     return ListView.separated(
-                      padding: const EdgeInsets.only(bottom: 65),
-                      itemCount: filteredDeliveries.length,
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      itemCount: deliveries.length,
+                      itemBuilder: (context, index) =>
+                          _buildDeliveryCard(context, deliveries[index], index),
                       separatorBuilder: (_, __) => const SizedBox(height: 12),
-                      itemBuilder: (context, index) => _buildDeliveryCard(
-                        context,
-                        filteredDeliveries[index],
-                        index,
-                      ),
                     );
                   },
                 ),
               ),
-              SizedBox(height: 50),
             ],
           ),
         ),
@@ -837,6 +684,8 @@ class _DeliveryUiModel {
     required this.receiverName,
     required this.statusCode,
     required this.deliveryDurationLabel,
+    required this.note,
+    required this.senderaddress,
   });
 
   final String did;
@@ -846,6 +695,8 @@ class _DeliveryUiModel {
   final String receiverName;
   final int statusCode;
   final String deliveryDurationLabel;
+  final String note;
+  final String? senderaddress;
 
   int get clampedStatusCode => statusCode.clamp(1, 4);
 
@@ -858,4 +709,12 @@ class _UserProfile {
 
   final String uid;
   final String username;
+}
+
+class UserAddress {
+  UserAddress({required this.fulladdress, this.lat = 0, this.lng = 0});
+
+  final String fulladdress;
+  final int lat;
+  final int lng;
 }
