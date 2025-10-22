@@ -201,7 +201,10 @@ class _AssignmentlistState extends State<Assignmentlist> {
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             ),
             onPressed: () {
-              // context.pushNamed(name);
+              context.pushNamed(
+                'assignmentDetail',
+                queryParameters: {'did': delivery.did},
+              );
             },
             child: Row(
               children: [
@@ -235,7 +238,12 @@ class _AssignmentlistState extends State<Assignmentlist> {
               ),
               padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
             ),
-            onPressed: () {},
+            onPressed: () {
+              context.pushNamed(
+                'assignmentDetail',
+                queryParameters: {'did': delivery.did},
+              );
+            },
             child: Row(
               children: [
                 const Icon(
