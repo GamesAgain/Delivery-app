@@ -1,0 +1,60 @@
+{
+  "rules": {
+    "roles": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        ".write": "false",
+        "isAdmin": {
+          ".validate": "newData.isBoolean()"
+        }
+      }
+    },
+    "riderLocations": {
+      "$riderUid": {
+        ".read": "auth != null && (auth.uid == $riderUid || root.child('roles').child(auth.uid).child('isAdmin').val() == true)",
+        ".write": "auth != null && auth.uid == $riderUid",
+        ".validate": "newData.hasChildren(['lat','lng','updated_at'])",
+        "lat": {
+          ".validate": "newData.isNumber() && newData.val() >= -90 && newData.val() <= 90"
+        },
+        "lng": {
+          ".validate": "newData.isNumber() && newData.val() >= -180 && newData.val() <= 180"
+        },
+        "updated_at": {
+          ".validate": "newData.isNumber() || newData.val() == now"
+        }
+      }
+    },
+    "deliveryTracking": {
+      "$deliveryId": {
+        ".read": "auth != null && (auth.uid == data.child('sender_uid').val() || auth.uid == data.child('receiver_uid').val() || auth.uid == data.child('rider_uid').val() || root.child('roles').child(auth.uid).child('isAdmin').val() == true)",
+        ".write": "false",
+        "sender_uid": { ".validate": "newData.isString()" },
+        "receiver_uid": { ".validate": "newData.isString()" },
+        "rider_uid": { ".validate": "newData.isString()" },
+        "status_code": {
+          ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 4"
+        },
+        "item_name": {
+          ".validate": "newData.isString() || !newData.exists()"
+        },
+        "location": {
+          ".write": "auth != null && auth.uid == data.parent().child('rider_uid').val()",
+          ".validate": "newData.hasChildren(['lat','lng','updated_at'])",
+          "lat": {
+            ".validate": "newData.isNumber() && newData.val() >= -90 && newData.val() <= 90"
+          },
+          "lng": {
+            ".validate": "newData.isNumber() && newData.val() >= -180 && newData.val() <= 180"
+          },
+          "updated_at": {
+            ".validate": "newData.isNumber() || newData.val() == now"
+          }
+        },
+        "$other": {
+          ".validate": "true"
+        }
+      }
+    }
+  }
+}
