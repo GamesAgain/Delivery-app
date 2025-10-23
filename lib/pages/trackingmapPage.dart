@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:bootstrap_icons/bootstrap_icons.dart'; // Ensure this is imported if used in helpers
 import 'package:delivery_app/theme/app_theme.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -22,6 +23,9 @@ class TrackingMapPage extends StatefulWidget {
 }
 
 class _TrackingMapPageState extends State<TrackingMapPage> {
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
   bool _isLoading = true; // Tracks initial data loading
   bool _isUploading = false; // Tracks image upload process
   String? _errorMessage; // Stores any error messages for display
@@ -43,12 +47,16 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
       MapController(); // Controller for map interactions
 
   // --- Stream Subscriptions ---
-  StreamSubscription<Position>?
-  _riderLocationSubscription; // For rider location updates
+  StreamSubscription<Position>? _locationSubscription; // For rider location updates
   StreamSubscription? _assignmentSubscription; // For assignment status updates
 
   // --- Map Markers (flutter_map) ---
   List<Marker> _markers = []; // List to hold map markers
+
+  String? _riderUid;
+  bool _isTracking = false;
+  DateTime? _lastUpdateTime;
+  final Duration _updateThreshold = const Duration(seconds: 10);
 
   @override
   void initState() {
@@ -58,7 +66,8 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
 
   // Handles initial checks and starts data loading
   void _initializePage() {
-    final riderId = FirebaseAuth.instance.currentUser?.uid;
+    final riderId = _auth.currentUser?.uid;
+    _riderUid = riderId;
 
     if (riderId == null) {
       _handleErrorAndExit('Rider not found. Please log in.');
@@ -105,7 +114,7 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
   @override
   void dispose() {
     // Cancel streams to prevent memory leaks when the widget is removed
-    _riderLocationSubscription?.cancel();
+    _locationSubscription?.cancel();
     _assignmentSubscription?.cancel();
     super.dispose();
   }
@@ -295,47 +304,89 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
 
   // Starts listening for real-time rider location updates using Geolocator
   void _startListeningToRiderLocation(String riderId) async {
-    bool permissionGranted = await _handleLocationPermission();
-    if (!permissionGranted || !mounted) return;
+    final permissionGranted = await _handleLocationPermission();
+    if (!permissionGranted || !mounted) {
+      if (mounted) {
+        setState(() {
+          _isTracking = false;
+        });
+      }
+      return;
+    }
 
     const LocationSettings locationSettings = LocationSettings(
       accuracy: LocationAccuracy.high, // Use high accuracy for tracking
       distanceFilter: 10, // Update only when moved at least 10 meters
     );
 
-    _riderLocationSubscription =
-        Geolocator.getPositionStream(locationSettings: locationSettings).listen(
-          (Position position) {
-            if (mounted) {
-              final newPos = LatLng(position.latitude, position.longitude);
-              // Only move camera automatically on the *first* location update
-              bool needsCameraMove = _riderPosition == null;
-              setState(() {
-                _riderPosition = position;
-                _updateDistances(); // Recalculate distances with new position
-                _updateMapMarkers(); // Update rider marker position
-              });
-              if (needsCameraMove) {
-                _moveCamera(newPos, 16.5); // Zoom in closer on first update
+    await _locationSubscription?.cancel();
+    if (mounted) {
+      setState(() {
+        _isTracking = true;
+      });
+    }
 
-                // ‼ ลบการเรียก update route ออก
-              }
-              // Optional: Update RiderLocation collection in Firestore (if needed elsewhere)
-              // _updateRiderLocationInFirestore(riderId, position);
-            }
-          },
-          onError: (error) {
-            print("Error listening to rider location: $error");
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Error getting location: $error'),
-                  backgroundColor: Colors.red,
-                ),
-              );
-            }
-          },
-        );
+    _locationSubscription =
+        Geolocator.getPositionStream(locationSettings: locationSettings).listen(
+      (Position position) {
+        final now = DateTime.now();
+        final shouldUpdate = _lastUpdateTime == null ||
+            now.difference(_lastUpdateTime!) >= _updateThreshold;
+
+        if (shouldUpdate) {
+          unawaited(_updateLocationToFirestore(position));
+          _lastUpdateTime = now;
+        }
+
+        if (!mounted) return;
+
+        final newPos = LatLng(position.latitude, position.longitude);
+        final bool needsCameraMove = _riderPosition == null;
+        setState(() {
+          _riderPosition = position;
+          _updateDistances(); // Recalculate distances with new position
+          _updateMapMarkers(); // Update rider marker position
+        });
+        if (needsCameraMove) {
+          _moveCamera(newPos, 16.5); // Zoom in closer on first update
+        }
+      },
+      onError: (error, stackTrace) {
+        debugPrint('Error listening to rider location: $error');
+        debugPrintStack(stackTrace: stackTrace);
+        if (mounted) {
+          setState(() {
+            _isTracking = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error getting location: $error'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      },
+    );
+  }
+
+  Future<void> _updateLocationToFirestore(Position position) async {
+    final riderUid = _riderUid;
+    if (riderUid == null) return;
+
+    try {
+      await _firestore.collection('RiderLocation').doc(riderUid).set(
+        {
+          'rid': riderUid,
+          'lat': position.latitude,
+          'lng': position.longitude,
+          'updated_at': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+    } catch (e, stackTrace) {
+      debugPrint('Failed to update rider location: $e');
+      debugPrintStack(stackTrace: stackTrace);
+    }
   }
 
   // Handles requesting location permissions
@@ -416,6 +467,70 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
   }
 
   // --- 4. Map Logic ---
+  Widget _buildTrackingStatusBanner() {
+    final bool hasLocation = _riderPosition != null;
+    final String message;
+    final IconData icon;
+    final Color color;
+
+    if (!_isTracking) {
+      message = 'Location tracking paused';
+      icon = Icons.pause_circle_filled_outlined;
+      color = Colors.orange.shade700;
+    } else if (!hasLocation) {
+      message = 'Waiting for GPS signal...';
+      icon = Icons.location_searching;
+      color = Colors.amber.shade800;
+    } else {
+      final lat = _riderPosition!.latitude.toStringAsFixed(5);
+      final lng = _riderPosition!.longitude.toStringAsFixed(5);
+      message = 'Live location sharing ($lat, $lng) · ${_formatLastSync()}';
+      icon = Icons.navigation_rounded;
+      color = AppColors.primary;
+    }
+
+    return Card(
+      color: Colors.white.withOpacity(0.95),
+      elevation: 3,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+        child: Row(
+          children: [
+            Icon(icon, color: color),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                message,
+                style: TextStyle(
+                  color: color,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatLastSync() {
+    if (_lastUpdateTime == null) {
+      return 'syncing...';
+    }
+    final difference = DateTime.now().difference(_lastUpdateTime!);
+    if (difference.inSeconds < 60) {
+      return '${difference.inSeconds}s ago';
+    }
+    if (difference.inMinutes < 60) {
+      return '${difference.inMinutes}m ago';
+    }
+    if (difference.inHours < 24) {
+      return '${difference.inHours}h ago';
+    }
+    return '${difference.inDays}d ago';
+  }
+
   // Updates the list of markers displayed on the map based on current state
   void _updateMapMarkers() {
     if (!mounted || _riderPosition == null)
@@ -772,6 +887,13 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
                 // --- ‼ ลบ PolylineLayer ออก ---
                 MarkerLayer(markers: _markers), // Display the markers
               ],
+            ),
+
+            Positioned(
+              top: 16,
+              left: 16,
+              right: 16,
+              child: _buildTrackingStatusBanner(),
             ),
 
             // --- Bottom Sheet ---
