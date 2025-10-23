@@ -7,9 +7,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart' as rtdb;
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_map/flutter_map.dart' as fm;
+import 'package:flutter_map/flutter_map.dart' as fl;
+import 'package:latlong2/latlong.dart' as fl;
+// ---
 import 'package:google_fonts/google_fonts.dart';
-import 'package:latlong2/latlong.dart';
 
 class TrackDeliveryPage extends StatefulWidget {
   const TrackDeliveryPage({super.key, this.deliveryId, this.itemName});
@@ -35,45 +37,12 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
     4: 'ไรเดอร์นำส่งสินค้าแล้ว', // Rider delivered item
   };
 
-  // --- ค่าคงที่ Map ---
-  static const LatLng _initialMapCenter = LatLng(13.736717, 100.523186); // Bangkok center
-  static const double _initialMapZoom = 12;
-
-  // อ่าน API Key จาก Environment Variables ตอน build
-  // ถ้าไม่เจอ key ตอน build จะใช้ค่าว่าง ''
-  static const String _thunderforestApiKey = String.fromEnvironment(
-    'THUNDERFOREST_API_KEY',
-    defaultValue: '',
+  // --- (แก้ไข) เปลี่ยน CameraPosition เป็น LatLng ของ latlong2 ---
+  static final fl.LatLng _initialCameraPosition = fl.LatLng(
+    13.736717,
+    100.523186,
   );
-
-  // ประกอบ URL โดยใช้ Key ที่อ่านมา (ถ้า Key เป็นค่าว่าง, URL จะไม่ถูกต้อง)
-  static const String _thunderforestUrlTemplate =
-      'https://tile.thunderforest.com/transport/{z}/{x}/{y}.png?apikey=$_thunderforestApiKey';
-  static const String _thunderforestAttribution =
-      '© Thunderforest, © OpenStreetMap contributors';
-
-  // URL และ Attribution สำหรับ OpenStreetMap (ใช้เป็น Fallback)
-  static const String _openStreetMapUrlTemplate =
-      'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-  static const String _openStreetMapAttribution =
-      '© OpenStreetMap contributors';
-
-  // --- ค่าคงที่สำหรับ Marker ---
-  static const Color _kDefaultMarkerColor = Color(0xFF2563EB); // Blue
-  static const double _kSelectedMarkerSize = 34.0;
-  static const double _kUnselectedMarkerSize = 28.0;
-  static const double _kMarkerIconSize = 16.0;
-  static const double _kLabelSpacing = 6.0;
-  static const BoxConstraints _kLabelConstraints =
-      BoxConstraints(maxWidth: 160);
-  static const Duration _kMarkerAnimationDuration = Duration(milliseconds: 200);
-
-  // --- TextStyle สำหรับ Marker ---
-  static final TextStyle _kLabelTextStyle = GoogleFonts.poppins(
-    color: Colors.white,
-    fontSize: 10,
-    fontWeight: FontWeight.w600,
-  );
+  // ---
 
   // --- State Variables ---
   final Map<String, Future<_DeliveryDetails?>> _deliveryCache = {};
@@ -81,17 +50,25 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
   final Map<String, Future<_RiderProfile?>> _riderCache = {};
   final Map<String, Future<String?>> _addressCache = {};
 
-  final MapController _mapController = MapController();
+  // --- (แก้ไข) เปลี่ยน MapController ---
+  final fm.MapController _mapController = fm.MapController();
+  // ---
   late final Stream<List<_TrackedDelivery>> _deliveriesStream;
   final _locationStreamController =
-      StreamController<Map<String, LatLng?>>.broadcast();
+      StreamController<Map<String, fl.LatLng?>>.broadcast();
   final Map<String, StreamSubscription<rtdb.DatabaseEvent>> _rtdbListeners = {};
-  final Map<String, LatLng?> _currentLocations = {};
+  final Map<String, fl.LatLng?> _currentLocations = {};
   StreamSubscription<List<_TrackedDelivery>>? _firestoreSubscription;
-  Stream<Map<String, LatLng?>> get _realtimeLocationStream =>
+  Stream<Map<String, fl.LatLng?>> get _realtimeLocationStream =>
       _locationStreamController.stream;
+  // --- (ลบ) ไม่ต้องใช้ไอคอน Marker แบบ Bitmap ---
+  // BitmapDescriptor? _defaultMarkerIcon;
+  // BitmapDescriptor? _selectedMarkerIcon;
+  // ---
 
-  bool _isMapReady = false;
+  // --- (ลบ) ไม่ต้องเช็ค Map Ready ---
+  // bool _isMapReady = false;
+  // ---
   String? _pendingFocusDeliveryId;
   String? _focusedDeliveryId;
   String? _lastCameraSignature;
@@ -114,11 +91,12 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
     );
   }
 
+
   @override
   void dispose() {
-    _mapController.dispose(); // Dispose map controller
-
-    // Cancel Firestore subscription safely
+    // --- (แก้ไข) dispose controller ใหม่ ---
+    _mapController.dispose();
+    // ---
     final firestoreSubscription = _firestoreSubscription;
     _firestoreSubscription = null; // Set to null *before* cancelling
     if (firestoreSubscription != null) {
@@ -181,25 +159,21 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
               // Get the list of deliveries (or empty list if none)
               final deliveries = snapshot.data ?? const <_TrackedDelivery>[];
 
-              // Listen to the aggregated realtime location stream
-              return StreamBuilder<Map<String, LatLng?>>(
+              return StreamBuilder<Map<String, fl.LatLng?>>(
                 stream: _realtimeLocationStream,
                 builder: (context, locationSnapshot) {
                   // Get latest realtime positions (or empty map)
                   final realtimePositions =
-                      locationSnapshot.data ?? const <String, LatLng?>{};
-                  // Merge realtime and fallback positions
+                      locationSnapshot.data ?? const <String, fl.LatLng?>{};
                   final finalPositions =
                       _mergePositions(deliveries, realtimePositions);
 
                   // Schedule camera updates and focusing after the frame builds
                   WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (!mounted) return; // Ensure widget is still mounted
-                    // Update camera bounds/focus if map is ready
-                    if (_isMapReady) {
-                      _updateCamera(deliveries, finalPositions);
-                    }
-                    // Attempt to focus on a pending delivery if map wasn't ready before
+                    if (!mounted) return;
+                    // --- (แก้ไข) ลบการเช็ค _isMapReady ---
+                    _updateCamera(deliveries, finalPositions);
+                    // ---
                     if (_pendingFocusDeliveryId != null) {
                       final target = _findDeliveryById(
                         deliveries,
@@ -276,8 +250,11 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
         continue; // Skip empty IDs
       }
 
-      // Reference to the RTDB node for this specific order/delivery
-      final ref = rtdb.FirebaseDatabase.instance.ref('orders/$id');
+      // --- (แก้ไข) เปลี่ยน Path การฟัง RTDB ---
+      // ให้ตรงกับ Rider's App (deliveries/$id/riderLocation)
+      final ref = rtdb.FirebaseDatabase.instance
+          .ref('deliveries/$id/riderLocation');
+      // ---
       final subscription = ref.onValue.listen(
         (event) {
           // --- Stream Safety Check ---
@@ -294,7 +271,7 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
           }
           // Push the updated map of all current locations to the stream
           _locationStreamController
-              .add(Map<String, LatLng?>.from(_currentLocations));
+              .add(Map<String, fl.LatLng?>.from(_currentLocations));
         },
         onError: (error, stackTrace) {
           // --- Stream Safety Check ---
@@ -307,40 +284,25 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
       _rtdbListeners[id] = subscription; // Store the subscription
     }
 
-    // Push the initial/current state after adding/removing listeners
-    // --- Stream Safety Check ---
-    if (_locationStreamController.isClosed) return;
-    _locationStreamController.add(Map<String, LatLng?>.from(_currentLocations));
+    if (_locationStreamController.isClosed) {
+      return;
+    }
+    _locationStreamController.add(Map<String, fl.LatLng?>.from(_currentLocations));
   }
 
-  // Tries to extract LatLng from various possible RTDB data structures
-  LatLng? _extractRealtimeLocation(dynamic data) {
-    if (data is Map) {
-      // Prioritize specific keys, then try more general ones
-      final orderedCandidates = [
-        data['rider_location'],
-        data['current_location'],
-        data['location'],
-        data['geo'],
-        data, // Check if the map itself contains lat/lng keys
-      ];
-      for (final candidate in orderedCandidates) {
-        final latLng = _latLngFromDynamic(candidate);
-        if (latLng != null) {
-          return latLng;
-        }
-      }
-      return null; // Not found in any common key
-    }
-    // Handle cases where data might be just the GeoPoint directly
+  // --- (แก้ไข) ปรับฟังก์ชันให้รับข้อมูลจาก Path ใหม่ ---
+  fl.LatLng? _extractRealtimeLocation(dynamic data) {
+    // ข้อมูลจาก 'deliveries/$id/riderLocation'
+    // จะเป็น Map ของ location โดยตรง เช่น { 'latitude': ..., 'longitude': ... }
+    // จึงเรียก _latLngFromDynamic ได้เลย
     return _latLngFromDynamic(data);
   }
+  // ---
 
-  // Converts dynamic data (Map or GeoPoint) to LatLng
-  LatLng? _latLngFromDynamic(dynamic value) {
-    // Handle Firestore GeoPoint
+  // --- (แก้ไข) เปลี่ยนชนิดข้อมูลที่ return เป็น fl.LatLng ---
+  fl.LatLng? _latLngFromDynamic(dynamic value) {
     if (value is GeoPoint) {
-      return LatLng(value.latitude, value.longitude);
+      return fl.LatLng(value.latitude, value.longitude);
     }
     // Handle Map containing lat/lng keys (various casings)
     if (value is Map) {
@@ -357,24 +319,20 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
             value['latLng']?['lng'], // Handle nested structure
       );
       if (lat != null && lng != null) {
-        // Basic validation for sanity
-        if(lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-           return LatLng(lat, lng);
-        } else {
-           print("Warning: Invalid Lat/Lng values parsed: lat=$lat, lng=$lng");
-           return null;
-        }
+        return fl.LatLng(lat, lng);
       }
     }
     return null; // Could not parse
   }
+  // ---
 
-  // Merges realtime locations with fallback locations from Firestore
-  Map<String, LatLng> _mergePositions(
+  // --- (แก้ไข) เปลี่ยนชนิดข้อมูลที่ return ---
+  Map<String, fl.LatLng> _mergePositions(
     List<_TrackedDelivery> deliveries,
-    Map<String, LatLng?> realtimePositions,
+    Map<String, fl.LatLng?> realtimePositions,
   ) {
-    final merged = <String, LatLng>{};
+    final merged = <String, fl.LatLng>{};
+    // ---
     for (final delivery in deliveries) {
       // Prefer the realtime location if available
       final realtime = realtimePositions[delivery.did];
@@ -578,14 +536,14 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
   // Builds the FlutterMap widget and its overlays
   Widget _buildMap(
     List<_TrackedDelivery> deliveries,
-    Map<String, LatLng> positions, {
+    Map<String, fl.LatLng> positions, {
     required bool isLoading,
     String? error,
   }) {
     final hasDeliveries = deliveries.isNotEmpty;
-    // Check if the API Key was provided during build
-    final hasThunderforestKey = _thunderforestApiKey.isNotEmpty;
-    final markers = <Marker>[];
+    // --- (แก้ไข) เปลี่ยนชนิด Marker ---
+    final markers = <fm.Marker>{};
+    // ---
 
     // Create markers for each delivery with a valid position
     for (final delivery in deliveries) {
@@ -610,84 +568,25 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
         borderRadius: BorderRadius.circular(30),
         child: Stack( // Use Stack for overlays
           children: [
-            FlutterMap(
+            // --- (แก้ไข) เปลี่ยน GoogleMap เป็น FlutterMap ---
+            fm.FlutterMap(
               mapController: _mapController,
-              options: MapOptions(
-                initialCenter: _initialMapCenter,
-                initialZoom: _initialMapZoom,
-                minZoom: 3, // Prevent zooming out too far
-                maxZoom: 19, // Max zoom level for chosen tile providers
-                onMapReady: () { // Callback when map is initialized
-                  if (mounted) {
-                    setState(() => _isMapReady = true); // Allow camera updates
-                  }
-                },
-                // Optional: Add interaction options if needed
-                // interactionOptions: InteractionOptions(
-                //   flags: InteractiveFlag.all & ~InteractiveFlag.rotate, // Allow all except rotate
-                // ),
+              options: fm.MapOptions(
+                initialCenter: _initialCameraPosition,
+                initialZoom: 12,
               ),
               children: [
-                // Conditionally display Thunderforest or OSM based on API Key
-                if (hasThunderforestKey)
-                  TileLayer(
-                    urlTemplate: _thunderforestUrlTemplate,
-                    userAgentPackageName: 'dev.flutter.delivery_app', // Use your app package name
-                    maxZoom: 19,
-                    // Optional: Add retina support if needed
-                    // retinaMode: MediaQuery.of(context).devicePixelRatio > 1.0,
-                  )
-                else // Fallback to OpenStreetMap
-                  TileLayer(
-                    urlTemplate: _openStreetMapUrlTemplate,
-                    subdomains: const ['a', 'b', 'c'], // Standard OSM subdomains
-                    userAgentPackageName: 'dev.flutter.delivery_app',
-                    maxZoom: 19,
-                  ),
-                // Add the MarkerLayer only if there are markers to display
-                if (markers.isNotEmpty)
-                  MarkerLayer(
-                    markers: markers,
-                    // Optional: Define anchor behavior if needed (default is good)
-                    // rotate: false, // Markers usually shouldn't rotate with map
-                  ),
+                // Layer 1: พื้นหลังแผนที่
+                fm.TileLayer(
+                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  // *** สำคัญ: ใส่ User Agent ของแอปคุณ ***
+                  userAgentPackageName: 'com.example.yourapp',
+                ),
+                // Layer 2: Markers
+                fm.MarkerLayer(markers: markers.toList()),
               ],
             ),
-            // Display Map Attribution
-            Positioned(
-              right: 12,
-              bottom: 12,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.55),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  // Show correct attribution based on the map used
-                  hasThunderforestKey
-                      ? _thunderforestAttribution
-                      : _openStreetMapAttribution,
-                  style: GoogleFonts.poppins(
-                    color: Colors.white60,
-                    fontSize: 10,
-                  ),
-                ),
-              ),
-            ),
-            // Show a notice if using the fallback map
-            if (!hasThunderforestKey)
-              Positioned(
-                left: 16,
-                right: 16,
-                top: 16,
-                child: _buildMapNotice(
-                  'ไม่มี Thunderforest API Key - กำลังใช้แผนที่สำรองจาก OpenStreetMap', // No TF Key - Using OSM fallback
-                ),
-              ),
-            // --- Overlays for different states ---
-            // Message when there are no deliveries at all
+            // ---
             if (!hasDeliveries)
               _buildMapMessage(
                 'ยังไม่มีข้อมูลการจัดส่ง', // No delivery data yet
@@ -795,90 +694,56 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
     );
   }
 
-  // Creates a Marker widget for the flutter_map MarkerLayer
-  Marker _createMarker(_TrackedDelivery delivery, LatLng position) {
+  // --- (แก้ไข) สร้าง Marker สำหรับ flutter_map ---
+  fm.Marker _createMarker(_TrackedDelivery delivery, fl.LatLng position) {
     final isSelected = delivery.did == _focusedDeliveryId;
-    final color = isSelected ? _green : _kDefaultMarkerColor;
-
-    // Helper function to safely get the display name (Rider or Item)
-    String getDisplayName() {
-      final username = delivery.riderProfile?.username;
-      if (username != null && username.isNotEmpty) {
-        return username;
-      }
-      // Use the already processed itemName which has fallbacks
-      final itemName = delivery.itemName;
-      if (itemName.isNotEmpty) {
-        return itemName;
-      }
-      return 'Unknown'; // Final fallback if both are empty/null
-    }
-
-    final String displayName = getDisplayName();
-
-    return Marker(
-      point: position, // The LatLng position for the marker
-      alignment: Alignment.bottomCenter, // Anchor point at the bottom center
-      builder: (context) => GestureDetector( // Allow tapping on the marker
-        onTap: () => _onFocusRequest( // Call focus function on tap
+    return fm.Marker(
+      width: 100.0,
+      height: 80.0,
+      point: position,
+      child: GestureDetector(
+        onTap: () => _onFocusRequest(
           delivery,
           positionOverride: position,
         ),
-        // Add Semantics for accessibility (screen readers)
-        child: Semantics(
-          label: 'Delivery marker for $displayName. Status: ${delivery.statusLabel}. Tap to focus.',
-          child: Column(
-            mainAxisSize: MainAxisSize.min, // Keep column height minimal
-            children: [
-              // Label Container
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                constraints: _kLabelConstraints, // Apply max width constraint
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.6),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  displayName,
-                  style: _kLabelTextStyle, // Use defined text style
-                  overflow: TextOverflow.ellipsis, // Prevent long text overflow
-                  maxLines: 1, // Ensure single line
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              isSelected
+                  ? BootstrapIcons.geo_alt_fill
+                  : BootstrapIcons.geo_alt,
+              color: isSelected ? _green : Colors.blueAccent,
+              size: isSelected ? 45 : 35,
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              decoration: BoxDecoration(
+                color: _panel.withOpacity(0.7),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                delivery.riderProfile?.username ?? delivery.itemName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.poppins(
+                  color: isSelected ? _green : Colors.white70,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 10,
                 ),
               ),
-              const SizedBox(height: _kLabelSpacing), // Use defined spacing
-              // Animated Marker Icon (Circle)
-              AnimatedContainer(
-                duration: _kMarkerAnimationDuration, // Use defined duration
-                width: isSelected ? _kSelectedMarkerSize : _kUnselectedMarkerSize,
-                height: isSelected ? _kSelectedMarkerSize : _kUnselectedMarkerSize,
-                decoration: BoxDecoration(
-                  color: color, // Use selected or default color
-                  shape: BoxShape.circle,
-                  boxShadow: [ // Add a subtle shadow
-                    BoxShadow(
-                      color: color.withOpacity(0.5),
-                      blurRadius: 12,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
-                ),
-                child: const Icon( // Icon inside the circle
-                  BootstrapIcons.geo_alt_fill,
-                  color: Colors.white,
-                  size: _kMarkerIconSize, // Use defined icon size
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
+  // ---
 
   // Builds the horizontal list of delivery info cards
   Widget _buildDeliveryList(
     List<_TrackedDelivery> deliveries,
-    Map<String, LatLng> positions,
+    Map<String, fl.LatLng> positions,
   ) {
     // Show a message if there are no deliveries
     if (deliveries.isEmpty) {
@@ -934,7 +799,7 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
   // Builds a single delivery information card
   Widget _buildDeliveryInfoCard(
     _TrackedDelivery delivery,
-    LatLng? position,
+    fl.LatLng? position,
   ) {
     final isSelected = delivery.did == _focusedDeliveryId; // Check if this card is focused
     final statusColor = _statusColor(delivery.statusCode); // Get color for status
@@ -1197,7 +1062,7 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
   // Called when a marker or "View Location" button is tapped
   void _onFocusRequest(
     _TrackedDelivery delivery, {
-    LatLng? positionOverride,
+    fl.LatLng? positionOverride,
   }) {
     // Focus the map, updating the state to highlight the correct card/marker
     _focusDeliveryOnMap(
@@ -1210,9 +1075,9 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
   // Animates the map camera to focus on a specific delivery's position
   bool _focusDeliveryOnMap(
     _TrackedDelivery delivery, {
-    bool updateState = true, // Whether to call setState to update UI
-    double zoom = 16, // Default zoom level when focusing
-    LatLng? positionOverride, // Optional override for position (e.g., from RTDB)
+    bool updateState = true,
+    double zoom = 16,
+    fl.LatLng? positionOverride,
   }) {
     // Update the focused delivery ID (conditionally calls setState)
     if (updateState) {
@@ -1235,28 +1100,17 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
       return false;
     }
 
-    // If map is ready, animate the camera
-    if (_isMapReady) {
-      _mapController.animateTo(
-         dest: position,
-         zoom: zoom,
-         // Optional: Add curve/duration
-         // curve: Curves.easeInOut,
-         // duration: Duration(milliseconds: 500),
-      );
-      _pendingFocusDeliveryId = null; // Clear pending focus
-      return true; // Focus successful
-    }
-
-    // If map is not ready, mark as pending and return false
-    _pendingFocusDeliveryId = delivery.did;
-    return false;
+    // --- (แก้ไข) เปลี่ยน animateCamera เป็น move และลบ _isMapReady ---
+    _mapController.move(position, zoom);
+    // ---
+    _pendingFocusDeliveryId = null;
+    return true;
   }
 
   // Updates the map camera view based on the number and positions of markers
   void _updateCamera(
     List<_TrackedDelivery> deliveries,
-    Map<String, LatLng> positions,
+    Map<String, fl.LatLng> positions,
   ) {
     // Do nothing if there are no positions to show
     if (positions.isEmpty) {
@@ -1290,28 +1144,28 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
       return;
     }
 
-    // If map is not ready, cannot update camera yet
-    if (!_isMapReady) {
-      return;
-    }
+    // _mapController ไม่จำเป็นต้องเช็ค null เพราะเป็น final
+    // if (_mapController == null) {
+    //   return;
+    // }
 
     // If multiple deliveries, calculate bounds and fit them
     final bounds = _createBounds(positions.values);
     if (bounds != null) {
-      _mapController.animateTo(
-         bounds: bounds,
-         options: const FitBoundsOptions(
-            padding: EdgeInsets.all(100), // Padding around the bounds
-         ),
-         // Optional: Add curve/duration
-         // curve: Curves.easeInOut,
-         // duration: Duration(milliseconds: 500),
+      // --- (แก้ไข) เปลี่ยน animateCamera เป็น fitCamera ---
+      _mapController.fitCamera(
+        fm.CameraFit.bounds(
+          bounds: bounds,
+          padding: const EdgeInsets.all(100.0), // ใส่ padding
+        ),
       );
+      // ---
     }
   }
 
-  // Calculates the LatLngBounds containing all given points
-  LatLngBounds? _createBounds(Iterable<LatLng> points) {
+  // --- (แก้ไข) เปลี่ยนชนิดข้อมูลที่ return ---
+  fm.LatLngBounds? _createBounds(Iterable<fl.LatLng> points) {
+    // ---
     final iterator = points.iterator;
     // Return null if the iterable is empty
     if (!iterator.moveNext()) {
@@ -1333,8 +1187,12 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
       maxLng = max(maxLng, point.longitude);
     }
 
-    // Create bounds from the calculated min/max values
-    return LatLngBounds(LatLng(minLat, minLng), LatLng(maxLat, maxLng));
+    // --- (แก้ไข) ใช้ LatLngBounds ของ latlong2 ---
+    return fl.LatLngBounds(
+      fl.LatLng(minLat, minLng), // Southwest
+      fl.LatLng(maxLat, maxLng), // Northeast
+    );
+    // ---
   }
 
   // --- Data Fetching Helper Functions (with Caching) ---
@@ -1462,17 +1320,20 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
     });
   }
 
-  // --- Utility Functions ---
-
-  LatLng? _parsePosition(Map<String, dynamic> data) {
-    // Try common keys first
+  // --- (แก้ไข) เปลี่ยนชนิดข้อมูลที่ return ---
+  fl.LatLng? _parsePosition(Map<String, dynamic> data) {
     final dynamic locationField = data['location'] ?? data['current_location'];
     if (locationField is GeoPoint) {
-      return LatLng(locationField.latitude, locationField.longitude);
+      return fl.LatLng(locationField.latitude, locationField.longitude);
     }
     if (locationField is Map<String, dynamic>) {
-       final latLng = _latLngFromDynamic(locationField);
-       if(latLng != null) return latLng;
+      final lat =
+          _tryParseDouble(locationField['lat'] ?? locationField['latitude']);
+      final lng =
+          _tryParseDouble(locationField['lng'] ?? locationField['longitude']);
+      if (lat != null && lng != null) {
+        return fl.LatLng(lat, lng);
+      }
     }
 
     // Try top-level lat/lng keys
@@ -1484,18 +1345,15 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
     );
 
     if (lat != null && lng != null) {
-      if(lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-        return LatLng(lat, lng);
-      } else {
-        print("Warning: Invalid top-level Lat/Lng values parsed: lat=$lat, lng=$lng");
-      }
+      return fl.LatLng(lat, lng);
     }
 
     // Try 'geo' field (often used for GeoPoint)
     final geo = data['geo'];
     if (geo is GeoPoint) {
-      return LatLng(geo.latitude, geo.longitude);
+      return fl.LatLng(geo.latitude, geo.longitude);
     }
+    // ---
 
     return null; // Could not parse position
   }
@@ -1605,18 +1463,22 @@ class _TrackedDelivery {
     required this.itemName,
     required this.statusCode,
     required this.statusLabel,
-    this.position, // Can be null if not available
-    this.updatedAt, // Can be null
-    this.riderProfile, // Can be null
-    this.senderProfile, // Can be null
-    this.receiverProfile, // Can be null
-    this.pickupAddress, // Can be null or empty
-    this.dropoffAddress, // Can be null or empty
+    // --- (แก้ไข) เปลี่ยนชนิดข้อมูล ---
+    this.position,
+    // ---
+    this.updatedAt,
+    this.riderProfile,
+    this.senderProfile,
+    this.receiverProfile,
+    this.pickupAddress,
+    this.dropoffAddress,
   });
 
   final String did;
   final String itemName;
-  final LatLng? position;
+  // --- (แก้ไข) เปลี่ยนชนิดข้อมูล ---
+  final fl.LatLng? position;
+  // ---
   final int statusCode;
   final String statusLabel;
   final DateTime? updatedAt;
@@ -1640,7 +1502,9 @@ class _DeliveryDetails {
     this.dropoffAddress, // Raw address fallback
     this.riderUid,
     required this.statusCode,
-    this.position, // Fallback position
+    // --- (แก้ไข) เปลี่ยนชนิดข้อมูล ---
+    this.position,
+    // ---
     this.updatedAt,
   });
 
@@ -1654,7 +1518,9 @@ class _DeliveryDetails {
   final String? dropoffAddress;
   final String? riderUid;
   final int statusCode;
-  final LatLng? position;
+  // --- (แก้ไข) เปลี่ยนชนิดข้อมูล ---
+  final fl.LatLng? position;
+  // ---
   final DateTime? updatedAt;
 }
 
@@ -1685,6 +1551,5 @@ class _RiderProfile { // <- Ensured correct spelling
 
 // Convenience extension to safely get the first element or null
 extension ListFirstOrNullExtension<T> on List<T> {
-  T? get firstOrNull => isEmpty ? null : first; // Use .first instead of this[0] for safety
+  T? get firstOrNull => isEmpty ? null : this[0];
 }
-
