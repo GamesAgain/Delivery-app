@@ -1,12 +1,13 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:bootstrap_icons/bootstrap_icons.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 class TrackDeliveryPage extends StatefulWidget {
   const TrackDeliveryPage({super.key, this.deliveryId, this.itemName});
@@ -31,11 +32,20 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
     4: 'ไรเดอร์นำส่งสินค้าแล้ว',
   };
 
-  final MapController _mapController = MapController();
+  static const CameraPosition _initialCameraPosition = CameraPosition(
+    target: LatLng(13.736717, 100.523186),
+    zoom: 12,
+  );
+
   final Map<String, Future<_DeliveryDetails?>> _deliveryCache = {};
   final Map<String, Future<_UserProfile?>> _userCache = {};
   final Map<String, Future<_RiderProfile?>> _riderCache = {};
   final Map<String, Future<String?>> _addressCache = {};
+
+  GoogleMapController? _mapController;
+  late final Stream<Map<String, LatLng?>> _realtimeLocationStream;
+  BitmapDescriptor? _defaultMarkerIcon;
+  BitmapDescriptor? _selectedMarkerIcon;
 
   bool _isMapReady = false;
   String? _pendingFocusDeliveryId;
@@ -47,6 +57,21 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
     super.initState();
     _pendingFocusDeliveryId = widget.deliveryId;
     _focusedDeliveryId = widget.deliveryId;
+    _realtimeLocationStream = _createRealtimeLocationStream();
+    _loadMarkerIcons();
+  }
+
+  Future<void> _loadMarkerIcons() async {
+    _defaultMarkerIcon =
+        BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure);
+    _selectedMarkerIcon =
+        BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen);
+  }
+
+  @override
+  void dispose() {
+    _mapController?.dispose();
+    super.dispose();
   }
 
   @override
@@ -88,45 +113,154 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
 
               final deliveries = snapshot.data ?? const <_TrackedDelivery>[];
 
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (!mounted) return;
-                if (_isMapReady) {
-                  _updateCamera(deliveries);
-                }
-                if (_pendingFocusDeliveryId != null) {
-                  final target = _findDeliveryById(
-                    deliveries,
-                    _pendingFocusDeliveryId!,
-                  );
-                  if (target != null) {
-                    final previousFocus = _focusedDeliveryId;
-                    final didFocus =
-                        _focusDeliveryOnMap(target, updateState: false);
-                    if (didFocus) {
-                      _pendingFocusDeliveryId = null;
-                    }
-                    if (previousFocus != _focusedDeliveryId || didFocus) {
-                      setState(() {});
-                    }
-                  }
-                }
-              });
+              return StreamBuilder<Map<String, LatLng?>>(
+                stream: _realtimeLocationStream,
+                builder: (context, locationSnapshot) {
+                  final realtimePositions =
+                      locationSnapshot.data ?? const <String, LatLng?>{};
+                  final finalPositions =
+                      _mergePositions(deliveries, realtimePositions);
 
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildHeader(deliveries),
-                  const SizedBox(height: 16),
-                  Expanded(child: _buildMap(deliveries)),
-                  const SizedBox(height: 16),
-                  _buildDeliveryList(deliveries),
-                ],
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (!mounted) return;
+                    if (_isMapReady) {
+                      _updateCamera(deliveries, finalPositions);
+                    }
+                    if (_pendingFocusDeliveryId != null) {
+                      final target = _findDeliveryById(
+                        deliveries,
+                        _pendingFocusDeliveryId!,
+                      );
+                      if (target != null) {
+                        final didFocus = _focusDeliveryOnMap(
+                          target,
+                          updateState: true,
+                          positionOverride: finalPositions[target.did],
+                        );
+                        if (didFocus) {
+                          _pendingFocusDeliveryId = null;
+                        }
+                      }
+                    }
+                  });
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildHeader(deliveries),
+                      const SizedBox(height: 16),
+                      Expanded(
+                        child: _buildMap(
+                          deliveries,
+                          finalPositions,
+                          isLoading: locationSnapshot.connectionState ==
+                              ConnectionState.waiting,
+                          error: locationSnapshot.hasError
+                              ? 'เกิดข้อผิดพลาดในการเชื่อมต่อข้อมูลตำแหน่ง'
+                              : null,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      _buildDeliveryList(deliveries, finalPositions),
+                    ],
+                  );
+                },
               );
             },
           ),
         ),
       ),
     );
+  }
+
+  Stream<Map<String, LatLng?>> _createRealtimeLocationStream() {
+    final ref = FirebaseDatabase.instance.ref('orders');
+    return ref.onValue.map((event) {
+      final snapshot = event.snapshot;
+      final locations = <String, LatLng?>{};
+      final value = snapshot.value;
+      if (value is Map) {
+        value.forEach((key, dynamic raw) {
+          final latLng = _extractRealtimeLocation(raw);
+          if (latLng != null) {
+            locations[key.toString()] = latLng;
+          }
+        });
+      } else if (value is List) {
+        for (var i = 0; i < value.length; i++) {
+          final raw = value[i];
+          if (raw == null) continue;
+          final latLng = _extractRealtimeLocation(raw);
+          if (latLng != null) {
+            locations['$i'] = latLng;
+          }
+        }
+      }
+      return locations;
+    });
+  }
+
+  LatLng? _extractRealtimeLocation(dynamic data) {
+    if (data is Map) {
+      final orderedCandidates = [
+        data['rider_location'],
+        data['current_location'],
+        data['location'],
+        data['geo'],
+        data,
+      ];
+      for (final candidate in orderedCandidates) {
+        final latLng = _latLngFromDynamic(candidate);
+        if (latLng != null) {
+          return latLng;
+        }
+      }
+      return null;
+    }
+    return _latLngFromDynamic(data);
+  }
+
+  LatLng? _latLngFromDynamic(dynamic value) {
+    if (value is GeoPoint) {
+      return LatLng(value.latitude, value.longitude);
+    }
+    if (value is Map) {
+      final lat = _tryParseDouble(
+        value['lat'] ??
+            value['latitude'] ??
+            value['Lat'] ??
+            value['latLng']?['lat'],
+      );
+      final lng = _tryParseDouble(
+        value['lng'] ??
+            value['longitude'] ??
+            value['Lng'] ??
+            value['latLng']?['lng'],
+      );
+      if (lat != null && lng != null) {
+        return LatLng(lat, lng);
+      }
+    }
+    return null;
+  }
+
+  Map<String, LatLng> _mergePositions(
+    List<_TrackedDelivery> deliveries,
+    Map<String, LatLng?> realtimePositions,
+  ) {
+    final merged = <String, LatLng>{};
+    for (final delivery in deliveries) {
+      final realtime = realtimePositions[delivery.did];
+      if (realtime != null) {
+        merged[delivery.did] = realtime;
+        continue;
+      }
+      final fallback = delivery.position;
+      if (fallback != null) {
+        merged[delivery.did] = fallback;
+      }
+    }
+    return merged;
   }
 
   Stream<List<_TrackedDelivery>> _trackedDeliveriesStream() {
@@ -274,12 +408,25 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
     );
   }
 
-  Widget _buildMap(List<_TrackedDelivery> deliveries) {
-    final positionedDeliveries = deliveries
-        .where((delivery) => delivery.position != null)
-        .toList(growable: false);
-    final defaultCenter = positionedDeliveries.firstOrNull?.position ??
-        const LatLng(13.736717, 100.523186);
+  Widget _buildMap(
+    List<_TrackedDelivery> deliveries,
+    Map<String, LatLng> positions, {
+    required bool isLoading,
+    String? error,
+  }) {
+    final hasDeliveries = deliveries.isNotEmpty;
+    final markers = <Marker>{};
+
+    for (final delivery in deliveries) {
+      final position = positions[delivery.did];
+      if (position == null) continue;
+      markers.add(
+        _createMarker(
+          delivery,
+          position,
+        ),
+      );
+    }
 
     return Container(
       decoration: BoxDecoration(
@@ -297,47 +444,41 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
         borderRadius: BorderRadius.circular(30),
         child: Stack(
           children: [
-            FlutterMap(
-              mapController: _mapController,
-              options: MapOptions(
-                initialCenter: defaultCenter,
-                initialZoom: 13,
-                backgroundColor: _background,
-                onMapReady: () {
-                  if (mounted) {
-                    setState(() => _isMapReady = true);
-                  }
-                },
-              ),
-              children: [
-                TileLayer(
-                  urlTemplate:
-                      'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                  userAgentPackageName: 'com.delivery.app',
-                ),
-                MarkerLayer(
-                  markers: positionedDeliveries
-                      .map((delivery) => _buildMarker(delivery))
-                      .toList(),
-                ),
-              ],
+            GoogleMap(
+              initialCameraPosition: _initialCameraPosition,
+              onMapCreated: (controller) {
+                _mapController = controller;
+                if (mounted) {
+                  setState(() => _isMapReady = true);
+                }
+              },
+              markers: markers,
+              mapType: MapType.normal,
+              zoomControlsEnabled: false,
+              myLocationEnabled: false,
+              myLocationButtonEnabled: false,
+              compassEnabled: false,
+              buildingsEnabled: true,
+              trafficEnabled: false,
             ),
-            if (positionedDeliveries.isEmpty)
-              Center(
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.6),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Text(
-                    deliveries.isEmpty
-                        ? 'ยังไม่มีข้อมูลการจัดส่ง'
-                        : 'รอไรเดอร์รับงาน ระบบจะอัปเดตเมื่อมีตำแหน่ง',
-                    style: GoogleFonts.poppins(color: Colors.white70),
-                  ),
-                ),
+            if (!hasDeliveries)
+              _buildMapMessage(
+                'ยังไม่มีข้อมูลการจัดส่ง',
+                'เมื่อมีไรเดอร์รับงาน ระบบจะแสดงตำแหน่งที่นี่',
+              )
+            else if (positions.isEmpty)
+              _buildMapMessage(
+                isLoading
+                    ? 'กำลังเชื่อมต่อข้อมูลตำแหน่ง...'
+                    : 'รอไรเดอร์ส่งตำแหน่งล่าสุด',
+                'แสดงผลแบบเรียลไทม์ทันทีที่ไรเดอร์เริ่มเดินทาง',
+              ),
+            if (error != null)
+              Positioned(
+                left: 16,
+                right: 16,
+                bottom: 16,
+                child: _buildErrorBanner(error),
               ),
           ],
         ),
@@ -345,59 +486,31 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
     );
   }
 
-  Marker _buildMarker(_TrackedDelivery delivery) {
-    final isSelected = delivery.did == _focusedDeliveryId;
-    final color =
-        isSelected ? _green : const Color.fromARGB(220, 31, 41, 55);
-    final position = delivery.position!;
-
-    return Marker(
-      point: position,
-      alignment: Alignment.bottomCenter,
-      child: GestureDetector(
-        onTap: () => _onFocusRequest(delivery),
+  Widget _buildMapMessage(String title, String subtitle) {
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.6),
+          borderRadius: BorderRadius.circular(16),
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              constraints: const BoxConstraints(maxWidth: 120),
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.65),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Text(
-                delivery.riderProfile?.username ?? delivery.itemName,
-                style: GoogleFonts.poppins(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                softWrap: false,
-                textAlign: TextAlign.center,
+            Text(
+              title,
+              style: GoogleFonts.poppins(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
               ),
             ),
-            const SizedBox(height: 6),
-            Container(
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: color,
-                border: Border.all(color: Colors.white, width: 2),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x66FF3B30),
-                    blurRadius: 10,
-                    offset: Offset(0, 6),
-                  ),
-                ],
-              ),
-              padding: const EdgeInsets.all(8),
-              child: Icon(
-                BootstrapIcons.geo_alt_fill,
-                color: Colors.white,
-                size: isSelected ? 24 : 20,
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.poppins(
+                color: Colors.white70,
+                fontSize: 12,
               ),
             ),
           ],
@@ -406,7 +519,57 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
     );
   }
 
-  Widget _buildDeliveryList(List<_TrackedDelivery> deliveries) {
+  Widget _buildErrorBanner(String message) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0x99EF4444),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          const Icon(BootstrapIcons.wifi_off, color: Colors.white),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: GoogleFonts.poppins(
+                color: Colors.white,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Marker _createMarker(_TrackedDelivery delivery, LatLng position) {
+    final isSelected = delivery.did == _focusedDeliveryId;
+    final hueIcon = isSelected ? _selectedMarkerIcon : _defaultMarkerIcon;
+    return Marker(
+      markerId: MarkerId(delivery.did),
+      position: position,
+      icon: hueIcon ??
+          BitmapDescriptor.defaultMarkerWithHue(
+            isSelected ? BitmapDescriptor.hueGreen : BitmapDescriptor.hueAzure,
+          ),
+      onTap: () => _onFocusRequest(
+        delivery,
+        positionOverride: position,
+      ),
+      infoWindow: InfoWindow(
+        title: delivery.riderProfile?.username ?? delivery.itemName,
+        snippet: delivery.statusLabel,
+      ),
+      zIndex: isSelected ? 2 : 1,
+    );
+  }
+
+  Widget _buildDeliveryList(
+    List<_TrackedDelivery> deliveries,
+    Map<String, LatLng> positions,
+  ) {
     if (deliveries.isEmpty) {
       return Container(
         width: double.infinity,
@@ -446,16 +609,22 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
         physics: const BouncingScrollPhysics(),
         itemCount: deliveries.length,
         separatorBuilder: (_, __) => const SizedBox(height: 12),
-        itemBuilder: (context, index) =>
-            _buildDeliveryInfoCard(deliveries[index]),
+        itemBuilder: (context, index) {
+          final delivery = deliveries[index];
+          final position = positions[delivery.did];
+          return _buildDeliveryInfoCard(delivery, position);
+        },
       ),
     );
   }
 
-  Widget _buildDeliveryInfoCard(_TrackedDelivery delivery) {
+  Widget _buildDeliveryInfoCard(
+    _TrackedDelivery delivery,
+    LatLng? position,
+  ) {
     final isSelected = delivery.did == _focusedDeliveryId;
     final statusColor = _statusColor(delivery.statusCode);
-    final hasPosition = delivery.position != null;
+    final hasPosition = position != null;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 250),
@@ -522,44 +691,22 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
           Text(
             delivery.itemName,
             style: GoogleFonts.poppins(
-              color: _white,
-              fontWeight: FontWeight.bold,
-              fontSize: 18,
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
             ),
           ),
-          const SizedBox(height: 12),
-          _buildLocationRow(
-            title: 'ผู้ส่ง',
-            name: delivery.senderProfile?.username,
-            address: delivery.pickupAddress,
-            icon: BootstrapIcons.box,
-          ),
-          const SizedBox(height: 10),
-          _buildLocationRow(
-            title: 'ผู้รับ',
-            name: delivery.receiverProfile?.username,
-            address: delivery.dropoffAddress,
-            icon: BootstrapIcons.house,
-          ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 8),
           Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               CircleAvatar(
-                radius: 24,
-                backgroundColor: Colors.white10,
-                backgroundImage: delivery.riderProfile?.avatarUrl != null &&
-                        delivery.riderProfile!.avatarUrl!.startsWith('http')
-                    ? NetworkImage(delivery.riderProfile!.avatarUrl!)
-                    : null,
-                child: (delivery.riderProfile?.avatarUrl == null ||
-                        delivery.riderProfile!.avatarUrl!.isEmpty ||
-                        !delivery.riderProfile!.avatarUrl!.startsWith('http'))
-                    ? const Icon(
-                        BootstrapIcons.person_fill,
-                        color: Colors.white,
-                      )
-                    : null,
+                radius: 18,
+                backgroundColor: const Color(0x332563EB),
+                child: Icon(
+                  BootstrapIcons.person_fill,
+                  color: Colors.white.withOpacity(0.9),
+                  size: 18,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -567,95 +714,111 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      delivery.riderProfile?.username ?? 'รอจัดสรรไรเดอร์',
+                      delivery.riderProfile?.username ?? 'ไรเดอร์',
                       style: GoogleFonts.poppins(
-                        color: _white,
+                        color: Colors.white,
                         fontWeight: FontWeight.w600,
-                        fontSize: 14,
                       ),
                     ),
-                    if ((delivery.riderProfile?.vehiclePlate ?? '').isNotEmpty)
+                    if (delivery.riderProfile?.vehiclePlate != null)
                       Text(
-                        'ทะเบียน: ${delivery.riderProfile!.vehiclePlate}',
+                        'ทะเบียน ${delivery.riderProfile!.vehiclePlate}',
                         style: GoogleFonts.poppins(
-                          color: Colors.white70,
+                          color: Colors.white60,
                           fontSize: 12,
-                        ),
-                      ),
-                    if (delivery.updatedAt != null)
-                      Text(
-                        'อัปเดตล่าสุด ${_formatRelativeTime(delivery.updatedAt!)}',
-                        style: GoogleFonts.poppins(
-                          color: Colors.white54,
-                          fontSize: 11,
                         ),
                       ),
                   ],
                 ),
               ),
-              ElevatedButton.icon(
-                onPressed:
-                    hasPosition ? () => _onFocusRequest(delivery) : null,
-                icon: Icon(
-                  BootstrapIcons.geo_alt,
-                  color: hasPosition ? Colors.white : Colors.white70,
-                  size: 16,
-                ),
-                label: FittedBox(
-                  child: Text(
-                    hasPosition ? 'Delivery Tracking' : 'รออัปเดตตำแหน่ง',
-                    style: GoogleFonts.poppins(
-                      color: hasPosition ? Colors.white : Colors.white70,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                    ),
+              if (hasPosition)
+                TextButton.icon(
+                  onPressed: () => _onFocusRequest(
+                    delivery,
+                    positionOverride: position,
+                  ),
+                  style: TextButton.styleFrom(
+                    foregroundColor: _green,
+                  ),
+                  icon: const Icon(BootstrapIcons.geo_fill, size: 16),
+                  label: const Text('ดูตำแหน่ง'),
+                )
+              else
+                Text(
+                  'ตำแหน่งยังไม่พร้อม',
+                  style: GoogleFonts.poppins(
+                    color: Colors.white38,
+                    fontSize: 12,
                   ),
                 ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _green,
-                  disabledBackgroundColor: Colors.white12,
-                  disabledForegroundColor: Colors.white54,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                ),
-              ),
             ],
           ),
+          const SizedBox(height: 12),
+          _buildAddressRow(
+            title: 'สถานที่รับสินค้า',
+            icon: BootstrapIcons.box_seam,
+            address: delivery.pickupAddress,
+          ),
+          const SizedBox(height: 8),
+          _buildAddressRow(
+            title: 'สถานที่จัดส่ง',
+            icon: BootstrapIcons.pin_map,
+            address: delivery.dropoffAddress,
+          ),
+          if (hasPosition) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0x332563EB),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    BootstrapIcons.radioactive,
+                    color: Colors.white70,
+                    size: 14,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Lat ${position!.latitude.toStringAsFixed(5)}, '
+                      'Lng ${position.longitude.toStringAsFixed(5)}',
+                      style: GoogleFonts.poppins(
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
 
-  Widget _buildLocationRow({
+  Widget _buildAddressRow({
     required String title,
     required IconData icon,
-    String? name,
     String? address,
   }) {
+    if (address == null || address.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: const Color(0x2216A34A),
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x55FF3B30),
-                blurRadius: 12,
-                offset: Offset(0, 8),
-              ),
-            ],
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle,
+            color: Color(0x332563EB),
           ),
-          child: Icon(
-            icon,
-            color: _green,
-            size: 18,
-          ),
+          padding: const EdgeInsets.all(6),
+          child: Icon(icon, color: Colors.white, size: 16),
         ),
         const SizedBox(width: 12),
         Expanded(
@@ -665,29 +828,19 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
               Text(
                 title,
                 style: GoogleFonts.poppins(
-                  color: Colors.white70,
-                  fontSize: 12,
+                  color: Colors.white,
+                  fontSize: 14,
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              if (name != null && name.isNotEmpty)
-                Text(
-                  name,
-                  style: GoogleFonts.poppins(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
+              Text(
+                address,
+                style: GoogleFonts.poppins(
+                  color: Colors.white60,
+                  fontSize: 12,
+                  height: 1.3,
                 ),
-              if (address != null && address.isNotEmpty)
-                Text(
-                  address,
-                  style: GoogleFonts.poppins(
-                    color: Colors.white60,
-                    fontSize: 12,
-                    height: 1.3,
-                  ),
-                ),
+              ),
             ],
           ),
         ),
@@ -695,12 +848,22 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
     );
   }
 
-  void _onFocusRequest(_TrackedDelivery delivery) {
-    _focusDeliveryOnMap(delivery);
+  void _onFocusRequest(
+    _TrackedDelivery delivery, {
+    LatLng? positionOverride,
+  }) {
+    _focusDeliveryOnMap(
+      delivery,
+      positionOverride: positionOverride,
+    );
   }
 
-  bool _focusDeliveryOnMap(_TrackedDelivery delivery,
-      {bool updateState = true, double zoom = 16}) {
+  bool _focusDeliveryOnMap(
+    _TrackedDelivery delivery, {
+    bool updateState = true,
+    double zoom = 16,
+    LatLng? positionOverride,
+  }) {
     if (updateState) {
       setState(() {
         _focusedDeliveryId = delivery.did;
@@ -709,34 +872,36 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
       _focusedDeliveryId = delivery.did;
     }
 
-    final position = delivery.position;
+    final position = positionOverride ?? delivery.position;
     if (position == null) {
       _pendingFocusDeliveryId = delivery.did;
       return false;
     }
 
-    if (_isMapReady) {
-      _mapController.move(position, zoom);
+    if (_isMapReady && _mapController != null) {
+      _mapController!.animateCamera(
+        CameraUpdate.newLatLngZoom(position, zoom),
+      );
       _pendingFocusDeliveryId = null;
       return true;
     }
+
     _pendingFocusDeliveryId = delivery.did;
     return false;
   }
 
-  void _updateCamera(List<_TrackedDelivery> deliveries) {
-    final positionedDeliveries = deliveries
-        .where((delivery) => delivery.position != null)
-        .toList(growable: false);
-
-    if (positionedDeliveries.isEmpty) {
+  void _updateCamera(
+    List<_TrackedDelivery> deliveries,
+    Map<String, LatLng> positions,
+  ) {
+    if (positions.isEmpty) {
       _lastCameraSignature = null;
       return;
     }
 
-    final signature = positionedDeliveries
-        .map((d) =>
-            '${d.did}:${d.position!.latitude.toStringAsFixed(6)},${d.position!.longitude.toStringAsFixed(6)}')
+    final signature = positions.entries
+        .map((entry) =>
+            '${entry.key}:${entry.value.latitude.toStringAsFixed(6)},${entry.value.longitude.toStringAsFixed(6)}')
         .join('|');
 
     if (signature == _lastCameraSignature) {
@@ -745,22 +910,53 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
 
     _lastCameraSignature = signature;
 
-    if (positionedDeliveries.length == 1) {
-      _focusDeliveryOnMap(positionedDeliveries.first, updateState: false);
+    if (positions.length == 1) {
+      final did = positions.keys.first;
+      final delivery = _findDeliveryById(deliveries, did);
+      if (delivery != null) {
+        _focusDeliveryOnMap(
+          delivery,
+          updateState: false,
+          positionOverride: positions[did],
+        );
+      }
       return;
     }
 
-    final bounds = LatLngBounds.fromPoints(
-      positionedDeliveries
-          .map((delivery) => delivery.position!)
-          .toList(growable: false),
-    );
+    if (_mapController == null) {
+      return;
+    }
 
-    _mapController.fitCamera(
-      CameraFit.bounds(
-        bounds: bounds,
-        padding: const EdgeInsets.all(100),
-      ),
+    final bounds = _createBounds(positions.values);
+    if (bounds != null) {
+      _mapController!.animateCamera(
+        CameraUpdate.newLatLngBounds(bounds, 100),
+      );
+    }
+  }
+
+  LatLngBounds? _createBounds(Iterable<LatLng> points) {
+    final iterator = points.iterator;
+    if (!iterator.moveNext()) {
+      return null;
+    }
+
+    double minLat = iterator.current.latitude;
+    double maxLat = iterator.current.latitude;
+    double minLng = iterator.current.longitude;
+    double maxLng = iterator.current.longitude;
+
+    while (iterator.moveNext()) {
+      final point = iterator.current;
+      minLat = min(minLat, point.latitude);
+      maxLat = max(maxLat, point.latitude);
+      minLng = min(minLng, point.longitude);
+      maxLng = max(maxLng, point.longitude);
+    }
+
+    return LatLngBounds(
+      southwest: LatLng(minLat, minLng),
+      northeast: LatLng(maxLat, maxLng),
     );
   }
 
@@ -895,10 +1091,10 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
       return LatLng(locationField.latitude, locationField.longitude);
     }
     if (locationField is Map<String, dynamic>) {
-      final lat = _tryParseDouble(
-          locationField['lat'] ?? locationField['latitude']);
-      final lng = _tryParseDouble(
-          locationField['lng'] ?? locationField['longitude']);
+      final lat =
+          _tryParseDouble(locationField['lat'] ?? locationField['latitude']);
+      final lng =
+          _tryParseDouble(locationField['lng'] ?? locationField['longitude']);
       if (lat != null && lng != null) {
         return LatLng(lat, lng);
       }
