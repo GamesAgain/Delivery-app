@@ -16,7 +16,6 @@ class AssignDetailPage extends StatefulWidget {
 }
 
 class _AssignDetailPageState extends State<AssignDetailPage> {
-  // ‼ --- State สำหรับจัดการการโหลด ---
   bool _isLoading = false;
 
   Stream<Delivery?> watchDeliveryByDid(String did) {
@@ -177,14 +176,13 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
             backgroundColor: Colors.green,
           ),
         );
-        // ‼ คุณต้องสร้าง Route 'trackingPage' ใน GoRouter
+
         context.pushReplacementNamed(
           'trackingPage',
           queryParameters: {'did': deliveryId},
         );
       }
     } catch (e) {
-      // --- 5. เกิดข้อผิดพลาด ---
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
