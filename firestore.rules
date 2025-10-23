@@ -1,0 +1,52 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isUser(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    match /users/{uid} {
+      allow read: if isUser(uid);
+      allow write: if isUser(uid);
+
+      match /addresses/{aid} {
+        allow read, write: if isUser(uid);
+      }
+
+      match /riderMeta/{docId} {
+        allow read, write: if isUser(uid);
+      }
+    }
+
+    match /tokens/{uid} {
+      allow read, write: if isUser(uid);
+    }
+
+    function shipmentMember(data) {
+      return isSignedIn() &&
+        (data.senderUid == request.auth.uid ||
+         data.receiverUid == request.auth.uid ||
+         data.riderUid == request.auth.uid);
+    }
+
+    match /shipments/{sid} {
+      allow create: if isSignedIn() && request.resource.data.senderUid == request.auth.uid;
+      allow read: if shipmentMember(resource.data);
+      allow update: if shipmentMember(resource.data) &&
+        (request.auth.uid == resource.data.senderUid ||
+         (request.auth.uid == resource.data.riderUid && resource.data.statusCode >= 2));
+      allow delete: if false;
+
+      match /history/{hid} {
+        allow read: if shipmentMember(get(/databases/$(database)/documents/shipments/$(sid)).data);
+        allow create: if shipmentMember(get(/databases/$(database)/documents/shipments/$(sid)).data) &&
+          request.resource.data.byUid == request.auth.uid;
+        allow update, delete: if false;
+      }
+    }
+  }
+}
