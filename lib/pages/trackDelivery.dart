@@ -35,8 +35,13 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
 
   static const LatLng _initialMapCenter = LatLng(13.736717, 100.523186);
   static const double _initialMapZoom = 12;
+  static const String _thunderforestApiKey = String.fromEnvironment(
+    'THUNDERFOREST_API_KEY',
+    defaultValue: '',
+  );
+
   static const String _thunderforestUrlTemplate =
-      'https://tile.thunderforest.com/transport/{z}/{x}/{y}.png?apikey=fa73e7cfa2dc480da8d4a68fef53f9e1';
+      'https://tile.thunderforest.com/transport/{z}/{x}/{y}.png?apikey=$_thunderforestApiKey';
   static const String _thunderforestAttribution =
       '© Thunderforest, © OpenStreetMap contributors';
 
@@ -499,11 +504,22 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
                 },
               ),
               children: [
-                TileLayer(
-                  urlTemplate: _thunderforestUrlTemplate,
-                  userAgentPackageName: 'delivery_app',
-                  maxZoom: 19,
-                ),
+                if (_thunderforestApiKey.isNotEmpty)
+                  TileLayer(
+                    urlTemplate: _thunderforestUrlTemplate,
+                    userAgentPackageName: 'delivery_app',
+                    maxZoom: 19,
+                  )
+                else
+                  Container(
+                    color: _panel,
+                    child: const Center(
+                      child: Text(
+                        'Map API Key is missing.',
+                        style: TextStyle(color: Colors.white54),
+                      ),
+                    ),
+                  ),
                 if (markers.isNotEmpty)
                   MarkerLayer(
                     markers: markers,
@@ -617,8 +633,6 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
     final color = isSelected ? _green : const Color(0xFF2563EB);
     return Marker(
       point: position,
-      width: 60,
-      height: 60,
       alignment: Alignment.bottomCenter,
       builder: (context) => GestureDetector(
         onTap: () => _onFocusRequest(
@@ -986,7 +1000,7 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
     }
 
     if (_isMapReady) {
-      _mapController.move(position, zoom);
+      _mapController.animateTo(dest: position, zoom: zoom);
       _pendingFocusDeliveryId = null;
       return true;
     }
@@ -1034,9 +1048,9 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
 
     final bounds = _createBounds(positions.values);
     if (bounds != null) {
-      _mapController.fitBounds(
-        bounds,
-        options: const FitBoundsOptions(padding: EdgeInsets.all(100)),
+      _mapController.animateTo(
+        bounds: bounds,
+        boundsOptions: const FitBoundsOptions(padding: EdgeInsets.all(100)),
       );
     }
   }
