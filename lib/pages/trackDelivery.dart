@@ -68,6 +68,9 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
     _firestoreSubscription = _deliveriesStream.listen(
       _onDeliveriesUpdated,
       onError: (error, stackTrace) {
+        if (_locationStreamController.isClosed) {
+          return;
+        }
         _locationStreamController.addError(error, stackTrace);
       },
     );
@@ -222,6 +225,9 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
       final ref = rtdb.FirebaseDatabase.instance.ref('orders/$id');
       final subscription = ref.onValue.listen(
         (event) {
+          if (_locationStreamController.isClosed) {
+            return;
+          }
           final latLng = _extractRealtimeLocation(event.snapshot.value);
           if (latLng != null) {
             _currentLocations[id] = latLng;
@@ -232,12 +238,18 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
               .add(Map<String, LatLng?>.from(_currentLocations));
         },
         onError: (error, stackTrace) {
+          if (_locationStreamController.isClosed) {
+            return;
+          }
           _locationStreamController.addError(error, stackTrace);
         },
       );
       _rtdbListeners[id] = subscription;
     }
 
+    if (_locationStreamController.isClosed) {
+      return;
+    }
     _locationStreamController.add(Map<String, LatLng?>.from(_currentLocations));
   }
 
