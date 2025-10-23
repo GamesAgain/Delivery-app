@@ -4,6 +4,7 @@ import 'package:delivery_app/pages/addNewAddress.dart';
 import 'package:delivery_app/pages/assignDetail.dart';
 import 'package:delivery_app/pages/assignmentList.dart';
 import 'package:delivery_app/pages/deliveryHistory.dart';
+import 'package:delivery_app/pages/trackingmapPage.dart';
 import 'package:delivery_app/theme/app_theme.dart';
 import 'package:delivery_app/pages/editAddress.dart';
 import 'package:delivery_app/pages/editProfile.dart';
@@ -14,7 +15,6 @@ import 'package:delivery_app/pages/pickAddressMap.dart';
 import 'package:delivery_app/pages/profile.dart';
 import 'package:delivery_app/pages/registerChoice.dart';
 import 'package:delivery_app/pages/register.dart';
-import 'package:delivery_app/pages/trackingmapPage.dart';
 import 'package:delivery_app/pages/useraddress.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -181,14 +181,6 @@ class MyApp extends StatelessWidget {
           },
         ),
         GoRoute(
-          path: '/trackingPage',
-          name: 'trackingPage',
-          pageBuilder: (context, state) {
-            final did = state.uri.queryParameters['did'];
-            return buildTransitionPage(
-              key: state.pageKey,
-              child: TrackingMapPage(did: did),);},),
-        GoRoute(
           path: '/deliveryHistory/:did',
           name: 'deliveryHistory',
           pageBuilder: (context, state) {
@@ -215,6 +207,17 @@ class MyApp extends StatelessWidget {
                 initialItemName: args?.itemName,
                 initialStatusLabel: args?.statusLabel,
               ),
+            );
+          },
+        ),
+        GoRoute(
+          path: '/trackingPage',
+          name: 'trackingPage',
+          pageBuilder: (context, state) {
+            final did = state.uri.queryParameters['did'];
+            return buildTransitionPage(
+              key: state.pageKey,
+              child: TrackingMapPage(did: did,)
             );
           },
         ),

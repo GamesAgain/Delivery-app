@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:bootstrap_icons/bootstrap_icons.dart'; // Ensure this is imported if used in helpers
+import 'package:delivery_app/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -11,13 +12,6 @@ import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:go_router/go_router.dart';
 // import 'package:open_route_service/open_route_service.dart'; // ‼ ลบออก
-
-// Assuming AppColors are defined elsewhere or replace with actual colors
-class AppColors {
-  static const Color bg = Color(0xFF0B0F19);
-  static const Color bgsecondary = Color(0xFF111827);
-  static const Color primary = Color(0xFF16A34A);
-}
 
 class TrackingMapPage extends StatefulWidget {
   final String? did; // Delivery ID passed to this page

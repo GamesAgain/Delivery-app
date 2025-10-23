@@ -352,7 +352,7 @@ class _AssignmentlistState extends State<Assignmentlist> {
                 FittedBox(
                   fit: BoxFit.scaleDown,
                   child: Text(
-                    'Accept Tracking',
+                    'Accept Delivery',
                     style: GoogleFonts.poppins(
                       color: const Color(0xFF16A34A),
                       fontWeight: FontWeight.bold,
