@@ -404,12 +404,6 @@ class _AddDeliveryPageState extends State<AddDeliveryPage> {
   }
 
   Future<void> _onReceiverSelected(Map<String, dynamic> receiver) async {
-    setState(() {
-      _selectedReceiver = receiver;
-      _pickupAddressId = null;
-      _dropoffAddressId = null;
-    });
-
     final receiverUid = receiver['uid'] as String?;
     final sender = FirebaseAuth.instance.currentUser;
 
@@ -431,7 +425,19 @@ class _AddDeliveryPageState extends State<AddDeliveryPage> {
       return;
     }
 
+    if (receiverUid == sender.uid) {
+      await showWarningSnackBar(
+        context,
+        title: "เลือกผู้รับไม่สำเร็จ",
+        message: "คุณไม่สามารถเลือกตัวเองเป็นผู้รับสินค้าได้",
+      );
+      return;
+    }
+
     setState(() {
+      _selectedReceiver = receiver;
+      _pickupAddressId = null;
+      _dropoffAddressId = null;
       _isLoadingAddresses = true;
     });
 
@@ -820,11 +826,21 @@ class _ReceiverPickerSheetState extends State<ReceiverPickerSheet> {
 
       final querySnapshot = await query.get();
 
+      final currentUid = FirebaseAuth.instance.currentUser?.uid;
       final users = querySnapshot.docs.map((doc) {
         final data =
             doc.data()! as Map<String, dynamic>; // Ensure data is a Map
         data['uid'] = doc.id;
         return data;
+      }).where((data) {
+        final uid = data['uid'];
+        if (uid is! String) {
+          return true;
+        }
+        if (currentUid == null || currentUid.isEmpty) {
+          return true;
+        }
+        return uid != currentUid;
       }).toList();
 
       if (mounted) {
@@ -851,7 +867,20 @@ class _ReceiverPickerSheetState extends State<ReceiverPickerSheet> {
 
   Widget buildUserCard(Map<String, dynamic> user) {
     return GestureDetector(
-      onTap: () => Navigator.pop(context, user),
+      onTap: () async {
+        final currentUid = FirebaseAuth.instance.currentUser?.uid;
+        final userUid = user['uid'];
+        if (currentUid != null && currentUid.isNotEmpty && userUid == currentUid) {
+          await showWarningSnackBar(
+            context,
+            title: "เลือกผู้รับไม่สำเร็จ",
+            message: "คุณไม่สามารถเลือกตัวเองเป็นผู้รับสินค้าได้",
+          );
+          return;
+        }
+        if (!mounted) return;
+        Navigator.pop(context, user);
+      },
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         padding: const EdgeInsets.all(16),
