@@ -43,7 +43,14 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
   final Map<String, Future<String?>> _addressCache = {};
 
   GoogleMapController? _mapController;
-  late final Stream<Map<String, LatLng?>> _realtimeLocationStream;
+  late final Stream<List<_TrackedDelivery>> _deliveriesStream;
+  final _locationStreamController =
+      StreamController<Map<String, LatLng?>>.broadcast();
+  final Map<String, StreamSubscription<rtdb.DatabaseEvent>> _rtdbListeners = {};
+  final Map<String, LatLng?> _currentLocations = {};
+  StreamSubscription<List<_TrackedDelivery>>? _firestoreSubscription;
+  Stream<Map<String, LatLng?>> get _realtimeLocationStream =>
+      _locationStreamController.stream;
   BitmapDescriptor? _defaultMarkerIcon;
   BitmapDescriptor? _selectedMarkerIcon;
 
@@ -57,7 +64,13 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
     super.initState();
     _pendingFocusDeliveryId = widget.deliveryId;
     _focusedDeliveryId = widget.deliveryId;
-    _realtimeLocationStream = _createRealtimeLocationStream();
+    _deliveriesStream = _trackedDeliveriesStream();
+    _firestoreSubscription = _deliveriesStream.listen(
+      _onDeliveriesUpdated,
+      onError: (error, stackTrace) {
+        _locationStreamController.addError(error, stackTrace);
+      },
+    );
     _loadMarkerIcons();
   }
 
@@ -71,6 +84,16 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
   @override
   void dispose() {
     _mapController?.dispose();
+    final firestoreSubscription = _firestoreSubscription;
+    _firestoreSubscription = null;
+    if (firestoreSubscription != null) {
+      unawaited(firestoreSubscription.cancel());
+    }
+    for (final subscription in _rtdbListeners.values) {
+      unawaited(subscription.cancel());
+    }
+    _rtdbListeners.clear();
+    unawaited(_locationStreamController.close());
     super.dispose();
   }
 
@@ -96,7 +119,7 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: StreamBuilder<List<_TrackedDelivery>>(
-            stream: _trackedDeliveriesStream(),
+            stream: _deliveriesStream,
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());
@@ -173,31 +196,49 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
     );
   }
 
-  Stream<Map<String, LatLng?>> _createRealtimeLocationStream() {
-    final ref = rtdb.FirebaseDatabase.instance.ref('orders');
-    return ref.onValue.map((event) {
-      final snapshot = event.snapshot;
-      final locations = <String, LatLng?>{};
-      final value = snapshot.value;
-      if (value is Map) {
-        value.forEach((key, dynamic raw) {
-          final latLng = _extractRealtimeLocation(raw);
-          if (latLng != null) {
-            locations[key.toString()] = latLng;
-          }
-        });
-      } else if (value is List) {
-        for (var i = 0; i < value.length; i++) {
-          final raw = value[i];
-          if (raw == null) continue;
-          final latLng = _extractRealtimeLocation(raw);
-          if (latLng != null) {
-            locations['$i'] = latLng;
-          }
-        }
+  void _onDeliveriesUpdated(List<_TrackedDelivery> deliveries) {
+    if (!mounted) {
+      return;
+    }
+
+    final newDeliveryIds = deliveries.map((delivery) => delivery.did).toSet();
+    final existingDeliveryIds = _rtdbListeners.keys.toSet();
+
+    final idsToRemove = existingDeliveryIds.difference(newDeliveryIds);
+    for (final id in idsToRemove) {
+      final subscription = _rtdbListeners.remove(id);
+      if (subscription != null) {
+        unawaited(subscription.cancel());
       }
-      return locations;
-    });
+      _currentLocations.remove(id);
+    }
+
+    final idsToAdd = newDeliveryIds.difference(existingDeliveryIds);
+    for (final id in idsToAdd) {
+      if (id.isEmpty) {
+        continue;
+      }
+
+      final ref = rtdb.FirebaseDatabase.instance.ref('orders/$id');
+      final subscription = ref.onValue.listen(
+        (event) {
+          final latLng = _extractRealtimeLocation(event.snapshot.value);
+          if (latLng != null) {
+            _currentLocations[id] = latLng;
+          } else {
+            _currentLocations.remove(id);
+          }
+          _locationStreamController
+              .add(Map<String, LatLng?>.from(_currentLocations));
+        },
+        onError: (error, stackTrace) {
+          _locationStreamController.addError(error, stackTrace);
+        },
+      );
+      _rtdbListeners[id] = subscription;
+    }
+
+    _locationStreamController.add(Map<String, LatLng?>.from(_currentLocations));
   }
 
   LatLng? _extractRealtimeLocation(dynamic data) {
