@@ -6,8 +6,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart' as rtdb;
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:latlong2/latlong.dart';
 
 class TrackDeliveryPage extends StatefulWidget {
   const TrackDeliveryPage({super.key, this.deliveryId, this.itemName});
@@ -32,17 +33,19 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
     4: 'ไรเดอร์นำส่งสินค้าแล้ว',
   };
 
-  static const CameraPosition _initialCameraPosition = CameraPosition(
-    target: LatLng(13.736717, 100.523186),
-    zoom: 12,
-  );
+  static const LatLng _initialMapCenter = LatLng(13.736717, 100.523186);
+  static const double _initialMapZoom = 12;
+  static const String _thunderforestUrlTemplate =
+      'https://tile.thunderforest.com/transport/{z}/{x}/{y}.png?apikey=fa73e7cfa2dc480da8d4a68fef53f9e1';
+  static const String _thunderforestAttribution =
+      '© Thunderforest, © OpenStreetMap contributors';
 
   final Map<String, Future<_DeliveryDetails?>> _deliveryCache = {};
   final Map<String, Future<_UserProfile?>> _userCache = {};
   final Map<String, Future<_RiderProfile?>> _riderCache = {};
   final Map<String, Future<String?>> _addressCache = {};
 
-  GoogleMapController? _mapController;
+  final MapController _mapController = MapController();
   late final Stream<List<_TrackedDelivery>> _deliveriesStream;
   final _locationStreamController =
       StreamController<Map<String, LatLng?>>.broadcast();
@@ -51,8 +54,6 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
   StreamSubscription<List<_TrackedDelivery>>? _firestoreSubscription;
   Stream<Map<String, LatLng?>> get _realtimeLocationStream =>
       _locationStreamController.stream;
-  BitmapDescriptor? _defaultMarkerIcon;
-  BitmapDescriptor? _selectedMarkerIcon;
 
   bool _isMapReady = false;
   String? _pendingFocusDeliveryId;
@@ -74,19 +75,11 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
         _locationStreamController.addError(error, stackTrace);
       },
     );
-    _loadMarkerIcons();
-  }
-
-  Future<void> _loadMarkerIcons() async {
-    _defaultMarkerIcon =
-        BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure);
-    _selectedMarkerIcon =
-        BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen);
   }
 
   @override
   void dispose() {
-    _mapController?.dispose();
+    _mapController.dispose();
     final firestoreSubscription = _firestoreSubscription;
     _firestoreSubscription = null;
     if (firestoreSubscription != null) {
@@ -468,17 +461,12 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
     String? error,
   }) {
     final hasDeliveries = deliveries.isNotEmpty;
-    final markers = <Marker>{};
+    final markers = <Marker>[];
 
     for (final delivery in deliveries) {
       final position = positions[delivery.did];
       if (position == null) continue;
-      markers.add(
-        _createMarker(
-          delivery,
-          position,
-        ),
-      );
+      markers.add(_createMarker(delivery, position));
     }
 
     return Container(
@@ -497,22 +485,49 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
         borderRadius: BorderRadius.circular(30),
         child: Stack(
           children: [
-            GoogleMap(
-              initialCameraPosition: _initialCameraPosition,
-              onMapCreated: (controller) {
-                _mapController = controller;
-                if (mounted) {
-                  setState(() => _isMapReady = true);
-                }
-              },
-              markers: markers,
-              mapType: MapType.normal,
-              zoomControlsEnabled: false,
-              myLocationEnabled: false,
-              myLocationButtonEnabled: false,
-              compassEnabled: false,
-              buildingsEnabled: true,
-              trafficEnabled: false,
+            FlutterMap(
+              mapController: _mapController,
+              options: MapOptions(
+                initialCenter: _initialMapCenter,
+                initialZoom: _initialMapZoom,
+                minZoom: 3,
+                maxZoom: 19,
+                onMapReady: () {
+                  if (mounted) {
+                    setState(() => _isMapReady = true);
+                  }
+                },
+              ),
+              children: [
+                TileLayer(
+                  urlTemplate: _thunderforestUrlTemplate,
+                  userAgentPackageName: 'delivery_app',
+                  maxZoom: 19,
+                ),
+                if (markers.isNotEmpty)
+                  MarkerLayer(
+                    markers: markers,
+                  ),
+              ],
+            ),
+            Positioned(
+              right: 12,
+              bottom: 12,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.55),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  _thunderforestAttribution,
+                  style: GoogleFonts.poppins(
+                    color: Colors.white60,
+                    fontSize: 10,
+                  ),
+                ),
+              ),
             ),
             if (!hasDeliveries)
               _buildMapMessage(
@@ -599,23 +614,62 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
 
   Marker _createMarker(_TrackedDelivery delivery, LatLng position) {
     final isSelected = delivery.did == _focusedDeliveryId;
-    final hueIcon = isSelected ? _selectedMarkerIcon : _defaultMarkerIcon;
+    final color = isSelected ? _green : const Color(0xFF2563EB);
     return Marker(
-      markerId: MarkerId(delivery.did),
-      position: position,
-      icon: hueIcon ??
-          BitmapDescriptor.defaultMarkerWithHue(
-            isSelected ? BitmapDescriptor.hueGreen : BitmapDescriptor.hueAzure,
-          ),
-      onTap: () => _onFocusRequest(
-        delivery,
-        positionOverride: position,
+      point: position,
+      width: 60,
+      height: 60,
+      alignment: Alignment.bottomCenter,
+      builder: (context) => GestureDetector(
+        onTap: () => _onFocusRequest(
+          delivery,
+          positionOverride: position,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              constraints: const BoxConstraints(maxWidth: 160),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.6),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                delivery.riderProfile?.username ?? delivery.itemName,
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(height: 6),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              width: isSelected ? 34 : 28,
+              height: isSelected ? 34 : 28,
+              decoration: BoxDecoration(
+                color: color,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: color.withOpacity(0.5),
+                    blurRadius: 12,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: const Icon(
+                BootstrapIcons.geo_alt_fill,
+                color: Colors.white,
+                size: 16,
+              ),
+            ),
+          ],
+        ),
       ),
-      infoWindow: InfoWindow(
-        title: delivery.riderProfile?.username ?? delivery.itemName,
-        snippet: delivery.statusLabel,
-      ),
-      zIndex: isSelected ? 2 : 1,
     );
   }
 
@@ -931,10 +985,8 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
       return false;
     }
 
-    if (_isMapReady && _mapController != null) {
-      _mapController!.animateCamera(
-        CameraUpdate.newLatLngZoom(position, zoom),
-      );
+    if (_isMapReady) {
+      _mapController.move(position, zoom);
       _pendingFocusDeliveryId = null;
       return true;
     }
@@ -976,14 +1028,15 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
       return;
     }
 
-    if (_mapController == null) {
+    if (!_isMapReady) {
       return;
     }
 
     final bounds = _createBounds(positions.values);
     if (bounds != null) {
-      _mapController!.animateCamera(
-        CameraUpdate.newLatLngBounds(bounds, 100),
+      _mapController.fitBounds(
+        bounds,
+        options: const FitBoundsOptions(padding: EdgeInsets.all(100)),
       );
     }
   }
@@ -1007,10 +1060,7 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
       maxLng = max(maxLng, point.longitude);
     }
 
-    return LatLngBounds(
-      southwest: LatLng(minLat, minLng),
-      northeast: LatLng(maxLat, maxLng),
-    );
+    return LatLngBounds(LatLng(minLat, minLng), LatLng(maxLat, maxLng));
   }
 
   Future<_DeliveryDetails?> _fetchDeliveryDetails(String? deliveryId) {
