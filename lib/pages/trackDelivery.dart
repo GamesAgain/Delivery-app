@@ -44,6 +44,10 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
       'https://tile.thunderforest.com/transport/{z}/{x}/{y}.png?apikey=$_thunderforestApiKey';
   static const String _thunderforestAttribution =
       '© Thunderforest, © OpenStreetMap contributors';
+  static const String _openStreetMapUrlTemplate =
+      'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+  static const String _openStreetMapAttribution =
+      '© OpenStreetMap contributors';
 
   final Map<String, Future<_DeliveryDetails?>> _deliveryCache = {};
   final Map<String, Future<_UserProfile?>> _userCache = {};
@@ -466,6 +470,7 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
     String? error,
   }) {
     final hasDeliveries = deliveries.isNotEmpty;
+    final hasThunderforestKey = _thunderforestApiKey.isNotEmpty;
     final markers = <Marker>[];
 
     for (final delivery in deliveries) {
@@ -504,21 +509,18 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
                 },
               ),
               children: [
-                if (_thunderforestApiKey.isNotEmpty)
+                if (hasThunderforestKey)
                   TileLayer(
                     urlTemplate: _thunderforestUrlTemplate,
                     userAgentPackageName: 'delivery_app',
                     maxZoom: 19,
                   )
                 else
-                  Container(
-                    color: _panel,
-                    child: const Center(
-                      child: Text(
-                        'Map API Key is missing.',
-                        style: TextStyle(color: Colors.white54),
-                      ),
-                    ),
+                  TileLayer(
+                    urlTemplate: _openStreetMapUrlTemplate,
+                    subdomains: const ['a', 'b', 'c'],
+                    userAgentPackageName: 'delivery_app',
+                    maxZoom: 19,
                   ),
                 if (markers.isNotEmpty)
                   MarkerLayer(
@@ -537,7 +539,9 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
-                  _thunderforestAttribution,
+                  hasThunderforestKey
+                      ? _thunderforestAttribution
+                      : _openStreetMapAttribution,
                   style: GoogleFonts.poppins(
                     color: Colors.white60,
                     fontSize: 10,
@@ -545,6 +549,15 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
                 ),
               ),
             ),
+            if (!hasThunderforestKey)
+              Positioned(
+                left: 16,
+                right: 16,
+                top: 16,
+                child: _buildMapNotice(
+                  'ไม่มี Thunderforest API Key - กำลังใช้แผนที่สำรองจาก OpenStreetMap',
+                ),
+              ),
             if (!hasDeliveries)
               _buildMapMessage(
                 'ยังไม่มีข้อมูลการจัดส่ง',
@@ -598,6 +611,25 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMapNotice(String message) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.7),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white24),
+      ),
+      child: Text(
+        message,
+        textAlign: TextAlign.center,
+        style: GoogleFonts.poppins(
+          color: Colors.white70,
+          fontSize: 11,
         ),
       ),
     );
