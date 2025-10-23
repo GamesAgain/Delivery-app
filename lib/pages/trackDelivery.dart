@@ -4,13 +4,10 @@ import 'dart:math';
 import 'package:bootstrap_icons/bootstrap_icons.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_database/firebase_database.dart' as rtdb;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart' as fm;
-import 'package:flutter_map/flutter_map.dart' as fl;
-import 'package:latlong2/latlong.dart' as fl;
-// ---
 import 'package:google_fonts/google_fonts.dart';
+import 'package:latlong2/latlong.dart' as ll;
 
 class TrackDeliveryPage extends StatefulWidget {
   const TrackDeliveryPage({super.key, this.deliveryId, this.itemName});
@@ -35,40 +32,34 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
     4: 'ไรเดอร์นำส่งสินค้าแล้ว',
   };
 
-  // --- (แก้ไข) เปลี่ยน CameraPosition เป็น LatLng ของ latlong2 ---
-  static final fl.LatLng _initialCameraPosition = fl.LatLng(
+  static final ll.LatLng _initialCameraPosition = ll.LatLng(
     13.736717,
     100.523186,
   );
-  // ---
 
-  final Map<String, Future<_DeliveryDetails?>> _deliveryCache = {};
-  final Map<String, Future<_UserProfile?>> _userCache = {};
-  final Map<String, Future<_RiderProfile?>> _riderCache = {};
-  final Map<String, Future<String?>> _addressCache = {};
-
-  // --- (แก้ไข) เปลี่ยน MapController ---
   final fm.MapController _mapController = fm.MapController();
-  // ---
+
   late final Stream<List<_TrackedDelivery>> _deliveriesStream;
   final _locationStreamController =
-      StreamController<Map<String, fl.LatLng?>>.broadcast();
-  final Map<String, StreamSubscription<rtdb.DatabaseEvent>> _rtdbListeners = {};
-  final Map<String, fl.LatLng?> _currentLocations = {};
+      StreamController<Map<String, ll.LatLng?>>.broadcast();
+  final Map<String,
+          StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>
+      _riderLocationListeners = {};
+  final Map<String, String> _deliveryRiderIds = {};
+  final Map<String, ll.LatLng?> _currentRiderLocations = {};
   StreamSubscription<List<_TrackedDelivery>>? _firestoreSubscription;
-  Stream<Map<String, fl.LatLng?>> get _realtimeLocationStream =>
-      _locationStreamController.stream;
-  // --- (ลบ) ไม่ต้องใช้ไอคอน Marker แบบ Bitmap ---
-  // BitmapDescriptor? _defaultMarkerIcon;
-  // BitmapDescriptor? _selectedMarkerIcon;
-  // ---
 
-  // --- (ลบ) ไม่ต้องเช็ค Map Ready ---
-  // bool _isMapReady = false;
-  // ---
+  final Map<String, Future<_UserProfile?>> _userCache = {};
+  final Map<String, Future<_RiderProfile?>> _riderCache = {};
+  final Map<String, Future<_AddressDetails?>> _addressCache = {};
+  final Map<String, Future<_AssignmentDetails?>> _assignmentCache = {};
+
   String? _pendingFocusDeliveryId;
   String? _focusedDeliveryId;
   String? _lastCameraSignature;
+
+  Stream<Map<String, ll.LatLng?>> get _realtimeLocationStream =>
+      _locationStreamController.stream;
 
   @override
   void initState() {
@@ -87,21 +78,20 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
     );
   }
 
-
   @override
   void dispose() {
-    // --- (แก้ไข) dispose controller ใหม่ ---
     _mapController.dispose();
-    // ---
     final firestoreSubscription = _firestoreSubscription;
     _firestoreSubscription = null;
     if (firestoreSubscription != null) {
       unawaited(firestoreSubscription.cancel());
     }
-    for (final subscription in _rtdbListeners.values) {
+    for (final subscription in _riderLocationListeners.values) {
       unawaited(subscription.cancel());
     }
-    _rtdbListeners.clear();
+    _riderLocationListeners.clear();
+    _deliveryRiderIds.clear();
+    _currentRiderLocations.clear();
     unawaited(_locationStreamController.close());
     super.dispose();
   }
@@ -145,19 +135,17 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
 
               final deliveries = snapshot.data ?? const <_TrackedDelivery>[];
 
-              return StreamBuilder<Map<String, fl.LatLng?>>(
+              return StreamBuilder<Map<String, ll.LatLng?>>(
                 stream: _realtimeLocationStream,
                 builder: (context, locationSnapshot) {
                   final realtimePositions =
-                      locationSnapshot.data ?? const <String, fl.LatLng?>{};
+                      locationSnapshot.data ?? const <String, ll.LatLng?>{};
                   final finalPositions =
                       _mergePositions(deliveries, realtimePositions);
 
                   WidgetsBinding.instance.addPostFrameCallback((_) {
                     if (!mounted) return;
-                    // --- (แก้ไข) ลบการเช็ค _isMapReady ---
                     _updateCamera(deliveries, finalPositions);
-                    // ---
                     if (_pendingFocusDeliveryId != null) {
                       final target = _findDeliveryById(
                         deliveries,
@@ -167,7 +155,7 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
                         final didFocus = _focusDeliveryOnMap(
                           target,
                           updateState: true,
-                          positionOverride: finalPositions[target.did],
+                          positionOverride: finalPositions[target.did]?.primary,
                         );
                         if (didFocus) {
                           _pendingFocusDeliveryId = null;
@@ -211,110 +199,99 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
     }
 
     final newDeliveryIds = deliveries.map((delivery) => delivery.did).toSet();
-    final existingDeliveryIds = _rtdbListeners.keys.toSet();
+    final existingDeliveryIds = _riderLocationListeners.keys.toSet();
 
     final idsToRemove = existingDeliveryIds.difference(newDeliveryIds);
     for (final id in idsToRemove) {
-      final subscription = _rtdbListeners.remove(id);
+      final subscription = _riderLocationListeners.remove(id);
+      _deliveryRiderIds.remove(id);
       if (subscription != null) {
         unawaited(subscription.cancel());
       }
-      _currentLocations.remove(id);
+      _currentRiderLocations.remove(id);
     }
 
-    final idsToAdd = newDeliveryIds.difference(existingDeliveryIds);
-    for (final id in idsToAdd) {
-      if (id.isEmpty) {
+    for (final delivery in deliveries) {
+      final rid = delivery.riderProfile?.uid ?? delivery.riderId;
+      final currentRid = _deliveryRiderIds[delivery.did];
+      if (rid == null || rid.isEmpty) {
+        if (currentRid != null) {
+          final subscription = _riderLocationListeners.remove(delivery.did);
+          _deliveryRiderIds.remove(delivery.did);
+          if (subscription != null) {
+            unawaited(subscription.cancel());
+          }
+          _currentRiderLocations.remove(delivery.did);
+        }
         continue;
       }
 
-      // --- (แก้ไข) เปลี่ยน Path การฟัง RTDB ---
-      // ให้ตรงกับ Rider's App (deliveries/$id/riderLocation)
-      final ref = rtdb.FirebaseDatabase.instance
-          .ref('deliveries/$id/riderLocation');
-      // ---
-      final subscription = ref.onValue.listen(
-        (event) {
-          if (_locationStreamController.isClosed) {
-            return;
-          }
-          final latLng = _extractRealtimeLocation(event.snapshot.value);
-          if (latLng != null) {
-            _currentLocations[id] = latLng;
-          } else {
-            _currentLocations.remove(id);
-          }
-          _locationStreamController
-              .add(Map<String, fl.LatLng?>.from(_currentLocations));
-        },
-        onError: (error, stackTrace) {
-          if (_locationStreamController.isClosed) {
-            return;
-          }
-          _locationStreamController.addError(error, stackTrace);
-        },
-      );
-      _rtdbListeners[id] = subscription;
+      if (currentRid == rid) {
+        continue;
+      }
+
+      final subscription = _riderLocationListeners.remove(delivery.did);
+      if (subscription != null) {
+        unawaited(subscription.cancel());
+      }
+      _listenToRiderLocation(delivery.did, rid);
     }
 
     if (_locationStreamController.isClosed) {
       return;
     }
-    _locationStreamController.add(Map<String, fl.LatLng?>.from(_currentLocations));
+    _locationStreamController
+        .add(Map<String, ll.LatLng?>.from(_currentRiderLocations));
   }
 
-  // --- (แก้ไข) ปรับฟังก์ชันให้รับข้อมูลจาก Path ใหม่ ---
-  fl.LatLng? _extractRealtimeLocation(dynamic data) {
-    // ข้อมูลจาก 'deliveries/$id/riderLocation'
-    // จะเป็น Map ของ location โดยตรง เช่น { 'latitude': ..., 'longitude': ... }
-    // จึงเรียก _latLngFromDynamic ได้เลย
-    return _latLngFromDynamic(data);
-  }
-  // ---
+  void _listenToRiderLocation(String deliveryId, String riderId) {
+    final query = FirebaseFirestore.instance
+        .collection('RiderLocation')
+        .where('rid', isEqualTo: riderId)
+        .limit(1);
 
-  // --- (แก้ไข) เปลี่ยนชนิดข้อมูลที่ return เป็น fl.LatLng ---
-  fl.LatLng? _latLngFromDynamic(dynamic value) {
-    if (value is GeoPoint) {
-      return fl.LatLng(value.latitude, value.longitude);
-    }
-    if (value is Map) {
-      final lat = _tryParseDouble(
-        value['lat'] ??
-            value['latitude'] ??
-            value['Lat'] ??
-            value['latLng']?['lat'],
-      );
-      final lng = _tryParseDouble(
-        value['lng'] ??
-            value['longitude'] ??
-            value['Lng'] ??
-            value['latLng']?['lng'],
-      );
-      if (lat != null && lng != null) {
-        return fl.LatLng(lat, lng);
-      }
-    }
-    return null;
-  }
-  // ---
+    final subscription = query.snapshots().listen(
+      (snapshot) {
+        if (_locationStreamController.isClosed) {
+          return;
+        }
+        ll.LatLng? latLng;
+        if (snapshot.docs.isNotEmpty) {
+          latLng = _latLngFromDynamic(snapshot.docs.first.data());
+        }
+        if (latLng != null) {
+          _currentRiderLocations[deliveryId] = latLng;
+        } else {
+          _currentRiderLocations.remove(deliveryId);
+        }
+        _locationStreamController
+            .add(Map<String, ll.LatLng?>.from(_currentRiderLocations));
+      },
+      onError: (error, stackTrace) {
+        if (_locationStreamController.isClosed) {
+          return;
+        }
+        _locationStreamController.addError(error, stackTrace);
+      },
+    );
 
-  // --- (แก้ไข) เปลี่ยนชนิดข้อมูลที่ return ---
-  Map<String, fl.LatLng> _mergePositions(
+    _riderLocationListeners[deliveryId] = subscription;
+    _deliveryRiderIds[deliveryId] = riderId;
+  }
+
+  Map<String, _DeliveryMapData> _mergePositions(
     List<_TrackedDelivery> deliveries,
-    Map<String, fl.LatLng?> realtimePositions,
+    Map<String, ll.LatLng?> realtimePositions,
   ) {
-    final merged = <String, fl.LatLng>{};
-    // ---
+    final merged = <String, _DeliveryMapData>{};
     for (final delivery in deliveries) {
-      final realtime = realtimePositions[delivery.did];
-      if (realtime != null) {
-        merged[delivery.did] = realtime;
-        continue;
-      }
-      final fallback = delivery.position;
-      if (fallback != null) {
-        merged[delivery.did] = fallback;
-      }
+      final rider =
+          realtimePositions[delivery.did] ?? delivery.riderLastKnownPosition;
+      merged[delivery.did] = _DeliveryMapData(
+        pickup: delivery.pickupAddress?.position,
+        dropoff: delivery.dropoffAddress?.position,
+        rider: rider,
+      );
     }
     return merged;
   }
@@ -325,13 +302,26 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
       return Stream<List<_TrackedDelivery>>.value(const []);
     }
 
-    Query<Map<String, dynamic>> query = FirebaseFirestore.instance
-        .collection('delivery_tracking')
-        .where('sender_uid', isEqualTo: currentUser.uid);
-
-    if (widget.deliveryId != null) {
-      query = query.where('did', isEqualTo: widget.deliveryId);
+    final deliveryId = widget.deliveryId;
+    if (deliveryId != null && deliveryId.isNotEmpty) {
+      final docRef = FirebaseFirestore.instance
+          .collection('delivery')
+          .doc(deliveryId);
+      return docRef.snapshots().asyncMap((snapshot) async {
+        if (!snapshot.exists || snapshot.data() == null) {
+          return const <_TrackedDelivery>[];
+        }
+        final tracked = await _buildTrackedDeliveryFromSnapshot(snapshot);
+        if (tracked == null) {
+          return const <_TrackedDelivery>[];
+        }
+        return <_TrackedDelivery>[tracked];
+      });
     }
+
+    Query<Map<String, dynamic>> query = FirebaseFirestore.instance
+        .collection('delivery')
+        .where('sender_uid', isEqualTo: currentUser.uid);
 
     return query.snapshots().asyncMap((snapshot) async {
       final futures = snapshot.docs.map(_buildTrackedDelivery).toList();
@@ -348,53 +338,66 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
 
   Future<_TrackedDelivery?> _buildTrackedDelivery(
     QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
+    return _buildTrackedDeliveryFromSnapshot(doc);
+  }
+
+  Future<_TrackedDelivery?> _buildTrackedDeliveryFromSnapshot(
+    DocumentSnapshot<Map<String, dynamic>> doc,
   ) async {
     final data = doc.data();
-    final did = (data['did'] as String?) ?? doc.id;
-    final statusCode = _parseStatusCode(data['status_code']);
-    final details = await _fetchDeliveryDetails(did);
+    if (data == null) {
+      return null;
+    }
 
+    final did = (data['did'] as String?) ?? doc.id;
     final itemNameRaw = (data['item_name'] as String?)?.trim();
     final itemName = (itemNameRaw != null && itemNameRaw.isNotEmpty)
         ? itemNameRaw
-        : details?.itemName ?? widget.itemName ?? 'รายการจัดส่ง';
+        : widget.itemName ?? 'รายการจัดส่ง';
 
-    final riderProfile = await _fetchRiderProfile(
-      (data['rider_uid'] as String?) ?? details?.riderUid,
-    );
+    final statusCode = _parseStatusCode(data['status_code']);
+    final statusText = (data['status'] as String?)?.trim();
 
-    final senderProfile = await _fetchUserProfile(
-      (data['sender_uid'] as String?) ?? details?.senderUid,
-    );
+    final assignment = await _fetchAssignment(did);
+    final riderId = assignment?.rid ?? data['rid'] as String?;
 
-    final receiverProfile = await _fetchUserProfile(
-      (data['receiver_uid'] as String?) ?? details?.receiverUid,
-    );
+    final pickupAddress =
+        await _fetchAddressDetails(data['pickup_addr_id'] as String?);
+    final dropoffAddress =
+        await _fetchAddressDetails(data['dropoff_addr_id'] as String?);
 
-    final pickupAddress = await _resolveAddress(
-      details?.pickupAddressId ?? data['pickup_addr_id'] as String?,
-    );
-    final dropoffAddress = await _resolveAddress(
-      details?.dropoffAddressId ?? data['dropoff_addr_id'] as String?,
-    );
+    final riderProfile = await _fetchRiderProfile(riderId);
+    final senderProfile =
+        await _fetchUserProfile(data['sender_uid'] as String?);
+    final receiverProfile =
+        await _fetchUserProfile(data['receiver_uid'] as String?);
 
     final updatedAt = (data['updated_at'] as Timestamp?)?.toDate() ??
-        details?.updatedAt ??
-        (data['last_updated'] as Timestamp?)?.toDate();
-    final position = _parsePosition(data) ?? details?.position;
+        (data['created_at'] as Timestamp?)?.toDate();
+    final riderFallback = _latLngFromDynamic(data['rider_location']) ??
+        _latLngFromDynamic(data['current_location']);
 
     return _TrackedDelivery(
       did: did,
       itemName: itemName,
-      position: position,
       statusCode: statusCode,
-      statusLabel: _statusLabels[statusCode] ?? 'สถานะไม่ทราบ',
+      statusLabel: (statusText != null && statusText.isNotEmpty)
+          ? statusText
+          : _statusLabels[statusCode] ?? 'สถานะไม่ทราบ',
       updatedAt: updatedAt,
-      riderProfile: riderProfile,
+      riderProfile: riderProfile ??
+          (riderId != null && riderId.isNotEmpty
+              ? _RiderProfile(uid: riderId, username: 'ไรเดอร์')
+              : null),
       senderProfile: senderProfile,
       receiverProfile: receiverProfile,
-      pickupAddress: pickupAddress ?? details?.pickupAddress,
-      dropoffAddress: dropoffAddress ?? details?.dropoffAddress,
+      pickupAddress: pickupAddress,
+      dropoffAddress: dropoffAddress,
+      riderId: riderId,
+      riderLastKnownPosition: riderFallback,
+      senderUid: data['sender_uid'] as String?,
+      receiverUid: data['receiver_uid'] as String?,
     );
   }
 
@@ -405,7 +408,7 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
         : 'Delivery Tracking';
     final subtitle = isSingle
         ? (deliveries.firstOrNull?.statusLabel ?? 'กำลังตรวจสอบสถานะ')
-        : 'คุณมีไรเดอร์ ${deliveries.length} คนกำลังจัดส่ง';
+        : 'คุณมี ${deliveries.length} รายการที่กำลังจัดส่ง';
     final latest = _latestUpdatedAt(deliveries);
 
     return Column(
@@ -466,24 +469,46 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
 
   Widget _buildMap(
     List<_TrackedDelivery> deliveries,
-    Map<String, fl.LatLng> positions, {
+    Map<String, _DeliveryMapData> positions, {
     required bool isLoading,
     String? error,
   }) {
     final hasDeliveries = deliveries.isNotEmpty;
-    // --- (แก้ไข) เปลี่ยนชนิด Marker ---
-    final markers = <fm.Marker>{};
-    // ---
+    final markers = <fm.Marker>[];
 
     for (final delivery in deliveries) {
-      final position = positions[delivery.did];
-      if (position == null) continue;
-      markers.add(
-        _createMarker(
-          delivery,
-          position,
-        ),
-      );
+      final data = positions[delivery.did];
+      if (data == null) continue;
+      final pickup = data.pickup;
+      final dropoff = data.dropoff;
+      final rider = data.rider;
+      if (pickup != null) {
+        markers.add(
+          _createMarker(
+            delivery: delivery,
+            position: pickup,
+            type: _MarkerType.pickup,
+          ),
+        );
+      }
+      if (dropoff != null) {
+        markers.add(
+          _createMarker(
+            delivery: delivery,
+            position: dropoff,
+            type: _MarkerType.dropoff,
+          ),
+        );
+      }
+      if (rider != null) {
+        markers.add(
+          _createMarker(
+            delivery: delivery,
+            position: rider,
+            type: _MarkerType.rider,
+          ),
+        );
+      }
     }
 
     return Container(
@@ -502,7 +527,6 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
         borderRadius: BorderRadius.circular(30),
         child: Stack(
           children: [
-            // --- (แก้ไข) เปลี่ยน GoogleMap เป็น FlutterMap ---
             fm.FlutterMap(
               mapController: _mapController,
               options: fm.MapOptions(
@@ -510,28 +534,25 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
                 initialZoom: 12,
               ),
               children: [
-                // Layer 1: พื้นหลังแผนที่
                 fm.TileLayer(
                   urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                  // *** สำคัญ: ใส่ User Agent ของแอปคุณ ***
-                  userAgentPackageName: 'com.example.yourapp',
+                  userAgentPackageName: 'com.delivery.app',
                 ),
-                // Layer 2: Markers
-                fm.MarkerLayer(markers: markers.toList()),
+                fm.MarkerLayer(markers: markers),
               ],
             ),
-            // ---
             if (!hasDeliveries)
               _buildMapMessage(
                 'ยังไม่มีข้อมูลการจัดส่ง',
                 'เมื่อมีไรเดอร์รับงาน ระบบจะแสดงตำแหน่งที่นี่',
               )
-            else if (positions.isEmpty)
+            else if (positions.values
+                .every((data) => data.rider == null && data.pickup == null && data.dropoff == null))
               _buildMapMessage(
                 isLoading
                     ? 'กำลังเชื่อมต่อข้อมูลตำแหน่ง...'
-                    : 'รอไรเดอร์ส่งตำแหน่งล่าสุด',
-                'แสดงผลแบบเรียลไทม์ทันทีที่ไรเดอร์เริ่มเดินทาง',
+                    : 'ยังไม่มีตำแหน่งสำหรับงานนี้',
+                'จะแสดงผลแบบเรียลไทม์ทันทีที่มีการอัปเดต',
               ),
             if (error != null)
               Positioned(
@@ -604,12 +625,19 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
     );
   }
 
-  // --- (แก้ไข) สร้าง Marker สำหรับ flutter_map ---
-  fm.Marker _createMarker(_TrackedDelivery delivery, fl.LatLng position) {
+  fm.Marker _createMarker({
+    required _TrackedDelivery delivery,
+    required ll.LatLng position,
+    required _MarkerType type,
+  }) {
     final isSelected = delivery.did == _focusedDeliveryId;
+    final icon = _markerIcon(type);
+    final color = _markerColor(type, isSelected: isSelected);
+    final label = _markerLabel(delivery, type);
+
     return fm.Marker(
-      width: 100.0,
-      height: 80.0,
+      width: 110,
+      height: 90,
       point: position,
       child: GestureDetector(
         onTap: () => _onFocusRequest(
@@ -620,39 +648,38 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              isSelected
-                  ? BootstrapIcons.geo_alt_fill
-                  : BootstrapIcons.geo_alt,
-              color: isSelected ? _green : Colors.blueAccent,
-              size: isSelected ? 45 : 35,
+              icon,
+              color: color,
+              size: type == _MarkerType.rider ? 42 : 34,
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-              decoration: BoxDecoration(
-                color: _panel.withOpacity(0.7),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                delivery.riderProfile?.username ?? delivery.itemName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.poppins(
-                  color: isSelected ? _green : Colors.white70,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 10,
+            if (label.isNotEmpty)
+              Container(
+                margin: const EdgeInsets.only(top: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: _panel.withOpacity(0.75),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.poppins(
+                    color: color,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 10,
+                  ),
                 ),
               ),
-            ),
           ],
         ),
       ),
     );
   }
-  // ---
 
   Widget _buildDeliveryList(
     List<_TrackedDelivery> deliveries,
-    Map<String, fl.LatLng> positions,
+    Map<String, _DeliveryMapData> positions,
   ) {
     if (deliveries.isEmpty) {
       return Container(
@@ -688,15 +715,15 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
     }
 
     return SizedBox(
-      height: 240,
+      height: 280,
       child: ListView.separated(
         physics: const BouncingScrollPhysics(),
         itemCount: deliveries.length,
         separatorBuilder: (_, __) => const SizedBox(height: 12),
         itemBuilder: (context, index) {
           final delivery = deliveries[index];
-          final position = positions[delivery.did];
-          return _buildDeliveryInfoCard(delivery, position);
+          final mapData = positions[delivery.did];
+          return _buildDeliveryInfoCard(delivery, mapData);
         },
       ),
     );
@@ -704,11 +731,16 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
 
   Widget _buildDeliveryInfoCard(
     _TrackedDelivery delivery,
-    fl.LatLng? position,
+    _DeliveryMapData? mapData,
   ) {
     final isSelected = delivery.did == _focusedDeliveryId;
     final statusColor = _statusColor(delivery.statusCode);
-    final hasPosition = position != null;
+    final riderPosition = mapData?.rider;
+    final dropoffPosition = mapData?.dropoff;
+    final pickupPosition = mapData?.pickup;
+    final focusPosition =
+        riderPosition ?? dropoffPosition ?? pickupPosition ??
+            delivery.riderLastKnownPosition;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 250),
@@ -781,104 +813,171 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
             ),
           ),
           const SizedBox(height: 8),
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 18,
-                backgroundColor: const Color(0x332563EB),
-                child: Icon(
-                  BootstrapIcons.person_fill,
-                  color: Colors.white.withOpacity(0.9),
-                  size: 18,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      delivery.riderProfile?.username ?? 'ไรเดอร์',
-                      style: GoogleFonts.poppins(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    if (delivery.riderProfile?.vehiclePlate != null)
-                      Text(
-                        'ทะเบียน ${delivery.riderProfile!.vehiclePlate}',
-                        style: GoogleFonts.poppins(
-                          color: Colors.white60,
-                          fontSize: 12,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              if (hasPosition)
-                TextButton.icon(
-                  onPressed: () => _onFocusRequest(
-                    delivery,
-                    positionOverride: position,
-                  ),
-                  style: TextButton.styleFrom(
-                    foregroundColor: _green,
-                  ),
-                  icon: const Icon(BootstrapIcons.geo_fill, size: 16),
-                  label: const Text('ดูตำแหน่ง'),
-                )
-              else
-                Text(
-                  'ตำแหน่งยังไม่พร้อม',
-                  style: GoogleFonts.poppins(
-                    color: Colors.white38,
-                    fontSize: 12,
-                  ),
-                ),
-            ],
+          _buildParticipantRow(
+            icon: BootstrapIcons.person_circle,
+            title: 'ผู้ส่ง',
+            value: delivery.senderProfile?.username ??
+                delivery.senderUid ??
+                'ไม่ระบุ',
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 6),
+          _buildParticipantRow(
+            icon: BootstrapIcons.person,
+            title: 'ผู้รับ',
+            value: delivery.receiverProfile?.username ??
+                delivery.receiverUid ??
+                'ไม่ระบุ',
+          ),
+          const SizedBox(height: 6),
+          _buildParticipantRow(
+            icon: BootstrapIcons.bicycle,
+            title: 'ไรเดอร์',
+            value: delivery.riderProfile?.username ?? 'ไม่พบข้อมูล',
+            trailing: (focusPosition != null)
+                ? TextButton.icon(
+                    onPressed: () => _onFocusRequest(
+                      delivery,
+                      positionOverride: focusPosition,
+                    ),
+                    style: TextButton.styleFrom(
+                      foregroundColor: _green,
+                    ),
+                    icon: const Icon(BootstrapIcons.geo_fill, size: 16),
+                    label: const Text('ดูตำแหน่ง'),
+                  )
+                : null,
+          ),
+          const SizedBox(height: 14),
           _buildAddressRow(
             title: 'สถานที่รับสินค้า',
             icon: BootstrapIcons.box_seam,
             address: delivery.pickupAddress,
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           _buildAddressRow(
             title: 'สถานที่จัดส่ง',
             icon: BootstrapIcons.pin_map,
             address: delivery.dropoffAddress,
           ),
-          if (hasPosition) ...[
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: const Color(0x332563EB),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Row(
-                children: [
-                  const Icon(
-                    BootstrapIcons.radioactive,
-                    color: Colors.white70,
-                    size: 14,
+          if (pickupPosition != null || dropoffPosition != null ||
+              riderPosition != null) ...[
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                if (pickupPosition != null)
+                  _buildCoordinateChip(
+                    label: 'จุดรับสินค้า',
+                    position: pickupPosition,
+                    icon: BootstrapIcons.geo,
+                    color: Colors.blueAccent,
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Lat ${position!.latitude.toStringAsFixed(5)}, '
-                      'Lng ${position.longitude.toStringAsFixed(5)}',
-                      style: GoogleFonts.poppins(
-                        color: Colors.white70,
-                        fontSize: 12,
-                      ),
-                    ),
+                if (dropoffPosition != null)
+                  _buildCoordinateChip(
+                    label: 'ปลายทาง',
+                    position: dropoffPosition,
+                    icon: BootstrapIcons.pin_map_fill,
+                    color: Colors.purpleAccent,
                   ),
-                ],
-              ),
+                if (riderPosition != null)
+                  _buildCoordinateChip(
+                    label: 'ไรเดอร์',
+                    position: riderPosition,
+                    icon: BootstrapIcons.geo_alt_fill,
+                    color: _green,
+                  ),
+              ],
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildParticipantRow({
+    required IconData icon,
+    required String title,
+    required String value,
+    Widget? trailing,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle,
+            color: Color(0x332563EB),
+          ),
+          child: Icon(icon, color: Colors.white, size: 16),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: GoogleFonts.poppins(
+                  color: Colors.white60,
+                  fontSize: 12,
+                ),
+              ),
+              Text(
+                value,
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (trailing != null) trailing,
+      ],
+    );
+  }
+
+  Widget _buildCoordinateChip({
+    required String label,
+    required ll.LatLng position,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.16),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: color.withOpacity(0.4)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 16),
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: GoogleFonts.poppins(
+                  color: color,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 11,
+                ),
+              ),
+              Text(
+                'Lat ${position.latitude.toStringAsFixed(5)}, '
+                'Lng ${position.longitude.toStringAsFixed(5)}',
+                style: GoogleFonts.poppins(
+                  color: Colors.white70,
+                  fontSize: 11,
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -887,10 +986,32 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
   Widget _buildAddressRow({
     required String title,
     required IconData icon,
-    String? address,
+    _AddressDetails? address,
   }) {
-    if (address == null || address.isEmpty) {
-      return const SizedBox.shrink();
+    final hasAddress = address != null && address.displayText.isNotEmpty;
+    if (!hasAddress) {
+      return Row(
+        children: [
+          Container(
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              color: Color(0x332563EB),
+            ),
+            padding: const EdgeInsets.all(6),
+            child: Icon(icon, color: Colors.white38, size: 16),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'ไม่มีข้อมูล $title',
+              style: GoogleFonts.poppins(
+                color: Colors.white38,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ],
+      );
     }
 
     return Row(
@@ -918,13 +1039,25 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
                 ),
               ),
               Text(
-                address,
+                address!.displayText,
                 style: GoogleFonts.poppins(
-                  color: Colors.white60,
+                  color: Colors.white70,
                   fontSize: 12,
                   height: 1.3,
                 ),
               ),
+              if (address.position != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    'Lat ${address.position!.latitude.toStringAsFixed(5)}, '
+                    'Lng ${address.position!.longitude.toStringAsFixed(5)}',
+                    style: GoogleFonts.poppins(
+                      color: Colors.white54,
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
@@ -934,7 +1067,7 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
 
   void _onFocusRequest(
     _TrackedDelivery delivery, {
-    fl.LatLng? positionOverride,
+    ll.LatLng? positionOverride,
   }) {
     _focusDeliveryOnMap(
       delivery,
@@ -946,7 +1079,7 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
     _TrackedDelivery delivery, {
     bool updateState = true,
     double zoom = 16,
-    fl.LatLng? positionOverride,
+    ll.LatLng? positionOverride,
   }) {
     if (updateState) {
       setState(() {
@@ -956,37 +1089,49 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
       _focusedDeliveryId = delivery.did;
     }
 
-    final position = positionOverride ?? delivery.position;
+    final realtime = _currentRiderLocations[delivery.did];
+    final position = positionOverride ??
+        realtime ??
+        delivery.riderLastKnownPosition ??
+        delivery.dropoffAddress?.position ??
+        delivery.pickupAddress?.position;
+
     if (position == null) {
       _pendingFocusDeliveryId = delivery.did;
       return false;
     }
 
-    // --- (แก้ไข) เปลี่ยน animateCamera เป็น move และลบ _isMapReady ---
     _mapController.move(position, zoom);
-    // ---
     _pendingFocusDeliveryId = null;
     return true;
   }
 
   void _updateCamera(
     List<_TrackedDelivery> deliveries,
-    Map<String, fl.LatLng> positions,
+    Map<String, _DeliveryMapData> positions,
   ) {
     if (positions.isEmpty) {
       _lastCameraSignature = null;
       return;
     }
 
-    final signature = positions.entries
-        .map((entry) =>
-            '${entry.key}:${entry.value.latitude.toStringAsFixed(6)},${entry.value.longitude.toStringAsFixed(6)}')
-        .join('|');
+    final keys = positions.keys.toList()..sort();
+    final buffer = StringBuffer();
+    for (final key in keys) {
+      buffer.write(key);
+      final data = positions[key];
+      if (data == null) continue;
+      for (final point in data.nonNullPoints) {
+        buffer.write(':${point.latitude.toStringAsFixed(6)},'
+            '${point.longitude.toStringAsFixed(6)}');
+      }
+      buffer.write('|');
+    }
 
+    final signature = buffer.toString();
     if (signature == _lastCameraSignature) {
       return;
     }
-
     _lastCameraSignature = signature;
 
     if (positions.length == 1) {
@@ -996,33 +1141,33 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
         _focusDeliveryOnMap(
           delivery,
           updateState: false,
-          positionOverride: positions[did],
+          positionOverride: positions[did]?.primary,
         );
       }
       return;
     }
 
-    // _mapController ไม่จำเป็นต้องเช็ค null เพราะเป็น final
-    // if (_mapController == null) {
-    //   return;
-    // }
+    final points = <ll.LatLng>[];
+    for (final data in positions.values) {
+      points.addAll(data.nonNullPoints);
+    }
 
-    final bounds = _createBounds(positions.values);
+    if (points.isEmpty) {
+      return;
+    }
+
+    final bounds = _createBounds(points);
     if (bounds != null) {
-      // --- (แก้ไข) เปลี่ยน animateCamera เป็น fitCamera ---
       _mapController.fitCamera(
         fm.CameraFit.bounds(
           bounds: bounds,
-          padding: const EdgeInsets.all(100.0), // ใส่ padding
+          padding: const EdgeInsets.all(80),
         ),
       );
-      // ---
     }
   }
 
-  // --- (แก้ไข) เปลี่ยนชนิดข้อมูลที่ return ---
-  fm.LatLngBounds? _createBounds(Iterable<fl.LatLng> points) {
-    // ---
+  ll.LatLngBounds? _createBounds(Iterable<ll.LatLng> points) {
     final iterator = points.iterator;
     if (!iterator.moveNext()) {
       return null;
@@ -1041,50 +1186,46 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
       maxLng = max(maxLng, point.longitude);
     }
 
-    // --- (แก้ไข) ใช้ LatLngBounds ของ latlong2 ---
-    return fl.LatLngBounds(
-      fl.LatLng(minLat, minLng), // Southwest
-      fl.LatLng(maxLat, maxLng), // Northeast
+    return ll.LatLngBounds(
+      ll.LatLng(minLat, minLng),
+      ll.LatLng(maxLat, maxLng),
     );
-    // ---
   }
 
-  Future<_DeliveryDetails?> _fetchDeliveryDetails(String? deliveryId) {
-    if (deliveryId == null || deliveryId.isEmpty) {
-      return Future.value(null);
-    }
-
-    return _deliveryCache.putIfAbsent(deliveryId, () async {
+  Future<_AssignmentDetails?> _fetchAssignment(String deliveryId) {
+    return _assignmentCache.putIfAbsent(deliveryId, () async {
       try {
-        final doc = await FirebaseFirestore.instance
-            .collection('delivery')
-            .doc(deliveryId)
+        final snapshot = await FirebaseFirestore.instance
+            .collection('assignment')
+            .where('did', isEqualTo: deliveryId)
+            .orderBy('accepted_at', descending: true)
+            .limit(1)
             .get();
-        if (!doc.exists) {
+        if (snapshot.docs.isEmpty) {
           return null;
         }
-        final data = doc.data();
-        if (data == null) {
-          return null;
-        }
-        return _DeliveryDetails(
-          did: deliveryId,
-          itemName: (data['item_name'] as String?) ?? 'รายการจัดส่ง',
-          senderUid: data['sender_uid'] as String?,
-          receiverUid: data['receiver_uid'] as String?,
-          pickupAddressId: data['pickup_addr_id'] as String?,
-          dropoffAddressId: data['dropoff_addr_id'] as String?,
-          pickupAddress: data['pickup_address'] as String?,
-          dropoffAddress: data['dropoff_address'] as String?,
-          riderUid:
-              data['rider_uid'] as String? ?? data['assigned_rider_uid'] as String?,
+        final data = snapshot.docs.first.data();
+        return _AssignmentDetails(
+          rid: data['rid'] as String?,
           statusCode: _parseStatusCode(data['status_code']),
-          position: _parsePosition(data),
-          updatedAt: (data['updated_at'] as Timestamp?)?.toDate() ??
-              (data['status_updated_at'] as Timestamp?)?.toDate(),
         );
-      } catch (_) {
-        return null;
+      } on FirebaseException catch (error) {
+        if (error.code != 'failed-precondition') {
+          return null;
+        }
+        final fallback = await FirebaseFirestore.instance
+            .collection('assignment')
+            .where('did', isEqualTo: deliveryId)
+            .limit(1)
+            .get();
+        if (fallback.docs.isEmpty) {
+          return null;
+        }
+        final data = fallback.docs.first.data();
+        return _AssignmentDetails(
+          rid: data['rid'] as String?,
+          statusCode: _parseStatusCode(data['status_code']),
+        );
       }
     });
   }
@@ -1147,7 +1288,7 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
     });
   }
 
-  Future<String?> _resolveAddress(String? addressId) {
+  Future<_AddressDetails?> _fetchAddressDetails(String? addressId) {
     if (addressId == null || addressId.isEmpty) {
       return Future.value(null);
     }
@@ -1165,48 +1306,78 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
         if (data == null) {
           return null;
         }
-        return (data['fullAddress'] as String?) ??
-            (data['label'] as String?) ??
-            (data['addressName'] as String?);
+        final lat = _tryParseDouble(data['lat'] ?? data['latitude']);
+        final lng = _tryParseDouble(data['lng'] ?? data['longitude']);
+        ll.LatLng? position;
+        if (lat != null && lng != null) {
+          position = ll.LatLng(lat, lng);
+        }
+        final addressLine = (data['fullAddress'] as String?)?.trim();
+        final label = (data['label'] as String?)?.trim();
+        final number = (data['addressNumber'] as String?)?.trim();
+
+        final buffer = StringBuffer();
+        if (addressLine != null && addressLine.isNotEmpty) {
+          buffer.write(addressLine);
+        } else {
+          if (label != null && label.isNotEmpty) {
+            buffer.write(label);
+          }
+          if (number != null && number.isNotEmpty) {
+            if (buffer.isNotEmpty) buffer.write(' ');
+            buffer.write(number);
+          }
+          final district = (data['subDistrict'] as String?)?.trim();
+          final province = (data['province'] as String?)?.trim();
+          if (district != null && district.isNotEmpty) {
+            if (buffer.isNotEmpty) buffer.write(' ');
+            buffer.write(district);
+          }
+          if (province != null && province.isNotEmpty) {
+            if (buffer.isNotEmpty) buffer.write(' ');
+            buffer.write(province);
+          }
+        }
+
+        final display = buffer.isNotEmpty
+            ? buffer.toString()
+            : (label?.isNotEmpty == true
+                ? label!
+                : addressId);
+
+        return _AddressDetails(
+          id: addressId,
+          displayText: display,
+          position: position,
+          label: label,
+        );
       } catch (_) {
         return null;
       }
     });
   }
 
-  // --- (แก้ไข) เปลี่ยนชนิดข้อมูลที่ return ---
-  fl.LatLng? _parsePosition(Map<String, dynamic> data) {
-    final dynamic locationField = data['location'] ?? data['current_location'];
-    if (locationField is GeoPoint) {
-      return fl.LatLng(locationField.latitude, locationField.longitude);
+  ll.LatLng? _latLngFromDynamic(dynamic value) {
+    if (value is GeoPoint) {
+      return ll.LatLng(value.latitude, value.longitude);
     }
-    if (locationField is Map<String, dynamic>) {
-      final lat =
-          _tryParseDouble(locationField['lat'] ?? locationField['latitude']);
-      final lng =
-          _tryParseDouble(locationField['lng'] ?? locationField['longitude']);
+    if (value is Map) {
+      final lat = _tryParseDouble(
+        value['lat'] ??
+            value['latitude'] ??
+            value['Lat'] ??
+            value['latLng']?['lat'],
+      );
+      final lng = _tryParseDouble(
+        value['lng'] ??
+            value['longitude'] ??
+            value['Lng'] ??
+            value['latLng']?['lng'],
+      );
       if (lat != null && lng != null) {
-        return fl.LatLng(lat, lng);
+        return ll.LatLng(lat, lng);
       }
     }
-
-    final lat = _tryParseDouble(
-      data['lat'] ?? data['latitude'] ?? data['latlng']?['lat'],
-    );
-    final lng = _tryParseDouble(
-      data['lng'] ?? data['longitude'] ?? data['latlng']?['lng'],
-    );
-
-    if (lat != null && lng != null) {
-      return fl.LatLng(lat, lng);
-    }
-
-    final geo = data['geo'];
-    if (geo is GeoPoint) {
-      return fl.LatLng(geo.latitude, geo.longitude);
-    }
-    // ---
-
     return null;
   }
 
@@ -1263,6 +1434,39 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
     }
   }
 
+  Color _markerColor(_MarkerType type, {required bool isSelected}) {
+    switch (type) {
+      case _MarkerType.pickup:
+        return isSelected ? Colors.blueAccent : Colors.lightBlueAccent;
+      case _MarkerType.dropoff:
+        return isSelected ? Colors.purpleAccent : Colors.purple;
+      case _MarkerType.rider:
+        return isSelected ? _green : const Color(0xFF22C55E);
+    }
+  }
+
+  IconData _markerIcon(_MarkerType type) {
+    switch (type) {
+      case _MarkerType.pickup:
+        return BootstrapIcons.house_door_fill;
+      case _MarkerType.dropoff:
+        return BootstrapIcons.geo_alt;
+      case _MarkerType.rider:
+        return BootstrapIcons.geo_alt_fill;
+    }
+  }
+
+  String _markerLabel(_TrackedDelivery delivery, _MarkerType type) {
+    switch (type) {
+      case _MarkerType.pickup:
+        return delivery.senderProfile?.username ?? 'ผู้ส่ง';
+      case _MarkerType.dropoff:
+        return delivery.receiverProfile?.username ?? 'ผู้รับ';
+      case _MarkerType.rider:
+        return delivery.riderProfile?.username ?? 'ไรเดอร์';
+    }
+  }
+
   String _formatRelativeTime(DateTime time) {
     final now = DateTime.now();
     final diff = now.difference(time);
@@ -1304,80 +1508,87 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
 }
 
 class _TrackedDelivery {
-  _TrackedDelivery({
+  const _TrackedDelivery({
     required this.did,
     required this.itemName,
     required this.statusCode,
     required this.statusLabel,
-    // --- (แก้ไข) เปลี่ยนชนิดข้อมูล ---
-    this.position,
-    // ---
     this.updatedAt,
     this.riderProfile,
     this.senderProfile,
     this.receiverProfile,
     this.pickupAddress,
     this.dropoffAddress,
+    this.riderId,
+    this.riderLastKnownPosition,
+    this.senderUid,
+    this.receiverUid,
   });
 
   final String did;
   final String itemName;
-  // --- (แก้ไข) เปลี่ยนชนิดข้อมูล ---
-  final fl.LatLng? position;
-  // ---
   final int statusCode;
   final String statusLabel;
   final DateTime? updatedAt;
   final _RiderProfile? riderProfile;
   final _UserProfile? senderProfile;
   final _UserProfile? receiverProfile;
-  final String? pickupAddress;
-  final String? dropoffAddress;
-}
-
-class _DeliveryDetails {
-  _DeliveryDetails({
-    required this.did,
-    required this.itemName,
-    required this.senderUid,
-    required this.receiverUid,
-    required this.pickupAddressId,
-    required this.dropoffAddressId,
-    this.pickupAddress,
-    this.dropoffAddress,
-    this.riderUid,
-    required this.statusCode,
-    // --- (แก้ไข) เปลี่ยนชนิดข้อมูล ---
-    this.position,
-    // ---
-    this.updatedAt,
-  });
-
-  final String did;
-  final String itemName;
+  final _AddressDetails? pickupAddress;
+  final _AddressDetails? dropoffAddress;
+  final String? riderId;
+  final ll.LatLng? riderLastKnownPosition;
   final String? senderUid;
   final String? receiverUid;
-  final String? pickupAddressId;
-  final String? dropoffAddressId;
-  final String? pickupAddress;
-  final String? dropoffAddress;
-  final String? riderUid;
-  final int statusCode;
-  // --- (แก้ไข) เปลี่ยนชนิดข้อมูล ---
-  final fl.LatLng? position;
-  // ---
-  final DateTime? updatedAt;
+}
+
+class _AddressDetails {
+  const _AddressDetails({
+    required this.id,
+    required this.displayText,
+    this.position,
+    this.label,
+  });
+
+  final String id;
+  final String displayText;
+  final ll.LatLng? position;
+  final String? label;
+}
+
+class _AssignmentDetails {
+  const _AssignmentDetails({this.rid, this.statusCode});
+
+  final String? rid;
+  final int? statusCode;
+}
+
+class _DeliveryMapData {
+  const _DeliveryMapData({this.pickup, this.dropoff, this.rider});
+
+  final ll.LatLng? pickup;
+  final ll.LatLng? dropoff;
+  final ll.LatLng? rider;
+
+  Iterable<ll.LatLng> get nonNullPoints sync* {
+    if (pickup != null) yield pickup!;
+    if (dropoff != null) yield dropoff!;
+    if (rider != null) yield rider!;
+  }
+
+  ll.LatLng? get primary {
+    return rider ?? dropoff ?? pickup;
+  }
 }
 
 class _UserProfile {
-  _UserProfile({required this.uid, required this.username});
+  const _UserProfile({required this.uid, required this.username});
 
   final String uid;
   final String username;
 }
 
 class _RiderProfile {
-  _RiderProfile({
+  const _RiderProfile({
     required this.uid,
     required this.username,
     this.avatarUrl,
@@ -1389,6 +1600,8 @@ class _RiderProfile {
   final String? avatarUrl;
   final String? vehiclePlate;
 }
+
+enum _MarkerType { pickup, dropoff, rider }
 
 extension ListFirstOrNullExtension<T> on List<T> {
   T? get firstOrNull => isEmpty ? null : this[0];
