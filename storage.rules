@@ -1,0 +1,23 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    match /users/{uid}/{allPaths=**} {
+      allow read, write: if isSignedIn() && request.auth.uid == uid;
+    }
+
+    match /shipments/{sid}/{allPaths=**} {
+      allow read, write: if isSignedIn() && shipmentMember(sid);
+    }
+
+    function shipmentMember(sid) {
+      let doc = get(/databases/(default)/documents/shipments/$(sid)).data;
+      return doc.senderUid == request.auth.uid ||
+        doc.receiverUid == request.auth.uid ||
+        doc.riderUid == request.auth.uid;
+    }
+  }
+}
