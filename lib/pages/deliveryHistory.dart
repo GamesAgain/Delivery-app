@@ -22,7 +22,7 @@ class DeliveryHistoryPage extends StatefulWidget {
     required this.deliveryId,
     this.initialItemName,
     this.initialStatusLabel,
-  }) : assert(deliveryId.isNotEmpty, 'deliveryId must not be empty');
+  });
 
   final String deliveryId;
   final String? initialItemName;
