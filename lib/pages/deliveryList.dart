@@ -734,93 +734,93 @@ class _DeliverylistPageState extends State<DeliverylistPage> {
         ),
 
         // ========= Current Delivery (หัวเรื่อง "คงที่") =========
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Padding(
-                  padding: const EdgeInsets.only(left: 12),
-                  child: Text(
-                    'Current Delivery',
-                    style: GoogleFonts.poppins(
-                      color: white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 12),
+                    child: Text(
+                      'Current Delivery',
+                      style: GoogleFonts.poppins(
+                        color: white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
                     ),
                   ),
                 ),
-              ),
 
-              // ---------- List Delivery (เลื่อนเฉพาะส่วนนี้) ----------
-              const SizedBox(height: 12),
+                // ---------- List Delivery (เลื่อนเฉพาะส่วนนี้) ----------
+                const SizedBox(height: 12),
 
-              // ใช้ SizedBox จำกัดความสูง แล้วให้ ListView ภายในเลื่อน
-              SizedBox(
-                height: MediaQuery.of(context).size.height * 0.55,
-                child: StreamBuilder<List<_DeliveryUiModel>>(
-                  stream: _deliveryStream(),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
+                // ใช้ Expanded ให้ ListView ภายในเลื่อนโดยไม่เกิด overflow
+                Expanded(
+                  child: StreamBuilder<List<_DeliveryUiModel>>(
+                    stream: _deliveryStream(),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
 
-                    if (snapshot.hasError) {
-                      return Center(
-                        child: Text(
-                          'ไม่สามารถโหลดข้อมูลได้',
-                          style: GoogleFonts.poppins(color: white),
+                      if (snapshot.hasError) {
+                        return Center(
+                          child: Text(
+                            'ไม่สามารถโหลดข้อมูลได้',
+                            style: GoogleFonts.poppins(color: white),
+                          ),
+                        );
+                      }
+
+                      final deliveries =
+                          snapshot.data ?? const <_DeliveryUiModel>[];
+                      final searchQuery = _searchTerm;
+                      final filteredDeliveries = searchQuery.isEmpty
+                          ? deliveries
+                          : deliveries
+                                .where(
+                                  (delivery) => delivery.itemName
+                                      .toLowerCase()
+                                      .contains(searchQuery),
+                                )
+                                .toList();
+
+                      if (deliveries.isEmpty) {
+                        return Center(
+                          child: Text(
+                            'ยังไม่มีรายการจัดส่ง',
+                            style: GoogleFonts.poppins(color: white),
+                          ),
+                        );
+                      }
+
+                      if (filteredDeliveries.isEmpty) {
+                        return Center(
+                          child: Text(
+                            'ไม่พบรายการที่ตรงกับคำค้นหา',
+                            style: GoogleFonts.poppins(color: white),
+                          ),
+                        );
+                      }
+
+                      return ListView.separated(
+                        padding: const EdgeInsets.only(bottom: 65),
+                        itemCount: filteredDeliveries.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 12),
+                        itemBuilder: (context, index) => _buildDeliveryCard(
+                          context,
+                          filteredDeliveries[index],
+                          index,
                         ),
                       );
-                    }
-
-                    final deliveries =
-                        snapshot.data ?? const <_DeliveryUiModel>[];
-                    final searchQuery = _searchTerm;
-                    final filteredDeliveries = searchQuery.isEmpty
-                        ? deliveries
-                        : deliveries
-                              .where(
-                                (delivery) => delivery.itemName
-                                    .toLowerCase()
-                                    .contains(searchQuery),
-                              )
-                              .toList();
-
-                    if (deliveries.isEmpty) {
-                      return Center(
-                        child: Text(
-                          'ยังไม่มีรายการจัดส่ง',
-                          style: GoogleFonts.poppins(color: white),
-                        ),
-                      );
-                    }
-
-                    if (filteredDeliveries.isEmpty) {
-                      return Center(
-                        child: Text(
-                          'ไม่พบรายการที่ตรงกับคำค้นหา',
-                          style: GoogleFonts.poppins(color: white),
-                        ),
-                      );
-                    }
-
-                    return ListView.separated(
-                      padding: const EdgeInsets.only(bottom: 65),
-                      itemCount: filteredDeliveries.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 12),
-                      itemBuilder: (context, index) => _buildDeliveryCard(
-                        context,
-                        filteredDeliveries[index],
-                        index,
-                      ),
-                    );
-                  },
+                    },
+                  ),
                 ),
-              ),
-              SizedBox(height: 50),
-            ],
+              ],
+            ),
           ),
         ),
       ],
