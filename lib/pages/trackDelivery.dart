@@ -4,7 +4,7 @@ import 'dart:math';
 import 'package:bootstrap_icons/bootstrap_icons.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_database/firebase_database.dart';
+import 'package:firebase_database/firebase_database.dart' as rtdb;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -174,7 +174,7 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
   }
 
   Stream<Map<String, LatLng?>> _createRealtimeLocationStream() {
-    final ref = FirebaseDatabase.instance.ref('orders');
+    final ref = rtdb.FirebaseDatabase.instance.ref('orders');
     return ref.onValue.map((event) {
       final snapshot = event.snapshot;
       final locations = <String, LatLng?>{};
