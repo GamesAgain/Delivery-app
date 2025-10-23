@@ -3,6 +3,8 @@ import 'package:delivery_app/models/user.dart';
 import 'package:delivery_app/pages/addNewAddress.dart';
 import 'package:delivery_app/pages/assignDetail.dart';
 import 'package:delivery_app/pages/assignmentList.dart';
+import 'package:delivery_app/pages/deliveryHistory.dart';
+import 'package:delivery_app/theme/app_theme.dart';
 import 'package:delivery_app/pages/editAddress.dart';
 import 'package:delivery_app/pages/editProfile.dart';
 import 'package:delivery_app/pages/index.dart';
@@ -185,7 +187,34 @@ class MyApp extends StatelessWidget {
             final did = state.uri.queryParameters['did'];
             return buildTransitionPage(
               key: state.pageKey,
-              child: TrackingMapPage(did: did),
+              child: TrackingMapPage(did: did),);},),
+        GoRoute(
+          path: '/deliveryHistory/:did',
+          name: 'deliveryHistory',
+          pageBuilder: (context, state) {
+            final did = state.pathParameters['did'];
+            final args = state.extra as DeliveryHistoryPageArgs?;
+            if (did == null || did.isEmpty) {
+              return buildTransitionPage(
+                key: state.pageKey,
+                child: const Scaffold(
+                  backgroundColor: AppColors.bg,
+                  body: Center(
+                    child: Text(
+                      'ไม่พบรหัสการจัดส่ง',
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                  ),
+                ),
+              );
+            }
+            return buildTransitionPage(
+              key: state.pageKey,
+              child: DeliveryHistoryPage(
+                deliveryId: did,
+                initialItemName: args?.itemName,
+                initialStatusLabel: args?.statusLabel,
+              ),
             );
           },
         ),

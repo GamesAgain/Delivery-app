@@ -1,5 +1,9 @@
 import 'package:bootstrap_icons/bootstrap_icons.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:delivery_app/pages/deliveryHistory.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 class ShipmentPage extends StatefulWidget {
   const ShipmentPage({super.key});
@@ -15,6 +19,14 @@ class _ShipmentPageState extends State<ShipmentPage> {
   int _selectedIndex = 0;
 
   final List<String> tabs = ['กำลังดำเนินการ', 'เสร็จสิ้น', 'ยกเลิก/ล้มเหลว'];
+  final Map<String, Future<String?>> _userNameCache = {};
+
+  static const Map<int, String> _statusTitleMap = {
+    1: 'กำลังรอไรเดอร์มารับ',
+    2: 'ไรเดอร์รับงาน',
+    3: 'ไรเดอร์รับสินค้าแล้วและกำลังเดินทางไปส่ง',
+    4: 'ไรเดอร์นำส่งสินค้าแล้ว',
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -30,20 +42,175 @@ class _ShipmentPageState extends State<ShipmentPage> {
           ),
           const SizedBox(height: 12),
           Expanded(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-              children: const [
-                _ShipmentCard(
-                  sender: 'ผู้ส่ง',
-                  receiver: 'ผู้รับ',
-                  status: 'ไรเดอร์กำลังเดินทางไปรับสินค้า',
-                ),
-              ],
+            child: StreamBuilder<List<_ShipmentItem>>( 
+              stream: _shipmentsStream(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                if (snapshot.hasError) {
+                  return const _ShipmentMessage(
+                    icon: BootstrapIcons.exclamation_triangle_fill,
+                    message: 'ไม่สามารถโหลดประวัติการจัดส่งได้',
+                  );
+                }
+
+                final items = _filterShipments(snapshot.data ?? const <_ShipmentItem>[]);
+                if (items.isEmpty) {
+                  return const _ShipmentMessage(
+                    icon: BootstrapIcons.box,
+                    message: 'ไม่มีรายการจัดส่งในหมวดนี้',
+                  );
+                }
+
+                return ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                  itemCount: items.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                  itemBuilder: (context, index) {
+                    final item = items[index];
+                    return _ShipmentCard(
+                      sender: item.senderName,
+                      receiver: item.receiverName,
+                      status: _statusTextForItem(item),
+                      onDetails: () => _openDeliveryHistory(context, item),
+                    );
+                  },
+                );
+              },
             ),
           ),
         ],
       ),
     );
+  }
+
+  Stream<List<_ShipmentItem>> _shipmentsStream() {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) {
+      return Stream<List<_ShipmentItem>>.value(const <_ShipmentItem>[]);
+    }
+
+    return FirebaseFirestore.instance
+        .collection('delivery')
+        .where('sender_uid', isEqualTo: currentUser.uid)
+        .snapshots()
+        .asyncMap((snapshot) async {
+          final futures = snapshot.docs.map(_mapShipmentItem).toList();
+          final results = await Future.wait(futures);
+          results.sort((a, b) {
+            final aTime = a.updatedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+            final bTime = b.updatedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+            return bTime.compareTo(aTime);
+          });
+          return results;
+        });
+  }
+
+  Future<_ShipmentItem> _mapShipmentItem(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) async {
+    final data = doc.data();
+    final did = _normalizeText(data['did']) ?? doc.id;
+    final itemName =
+        _normalizeText(data['item_name']) ?? 'รายการจัดส่ง';
+    final senderName =
+        await _fetchUserName(_normalizeText(data['sender_uid'])) ?? 'ไม่พบข้อมูล';
+    final receiverName =
+        await _fetchUserName(_normalizeText(data['receiver_uid'])) ?? 'ไม่พบข้อมูล';
+    final statusCode = _parseStatusCode(data['status_code']);
+    final statusLabel = _normalizeText(data['status']);
+    final updatedAt =
+        _toDate(data['updated_at'] as Timestamp?) ??
+        _toDate(data['status_updated_at'] as Timestamp?) ??
+        _toDate(data['created_at'] as Timestamp?);
+
+    return _ShipmentItem(
+      did: did,
+      itemName: itemName,
+      senderName: senderName,
+      receiverName: receiverName,
+      statusCode: statusCode,
+      statusLabel: statusLabel,
+      updatedAt: updatedAt,
+    );
+  }
+
+  List<_ShipmentItem> _filterShipments(List<_ShipmentItem> items) {
+    switch (_selectedIndex) {
+      case 0:
+        return items.where((item) => item.isInProgress).toList(growable: false);
+      case 1:
+        return items.where((item) => item.isCompleted).toList(growable: false);
+      default:
+        return items.where((item) => item.isCancelled).toList(growable: false);
+    }
+  }
+
+  Future<String?> _fetchUserName(String? uid) {
+    if (uid == null || uid.isEmpty) {
+      return Future.value(null);
+    }
+
+    return _userNameCache.putIfAbsent(uid, () async {
+      try {
+        final doc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .get();
+        final data = doc.data();
+        if (!doc.exists || data == null) {
+          return null;
+        }
+        return _normalizeText(data['username']) ??
+            _normalizeText(data['display_name']) ??
+            'ผู้ใช้งาน';
+      } catch (_) {
+        return null;
+      }
+    });
+  }
+
+  void _openDeliveryHistory(BuildContext context, _ShipmentItem item) {
+    GoRouter.of(context).pushNamed(
+      'deliveryHistory',
+      pathParameters: {'did': item.did},
+      extra: DeliveryHistoryPageArgs(
+        itemName: item.itemName,
+        statusLabel: item.statusLabel,
+      ),
+    );
+  }
+
+  String _statusTextForItem(_ShipmentItem item) {
+    final label = item.statusLabel;
+    if (label != null && label.isNotEmpty) {
+      return label;
+    }
+    return _statusTitleMap[item.statusCode] ?? 'สถานะที่ ${item.statusCode}';
+  }
+
+  int _parseStatusCode(dynamic raw) {
+    if (raw is int) return raw;
+    if (raw is num) return raw.toInt();
+    if (raw is String) {
+      return int.tryParse(raw) ?? 0;
+    }
+    return 0;
+  }
+
+  DateTime? _toDate(Timestamp? timestamp) => timestamp?.toDate().toLocal();
+
+  String? _normalizeText(dynamic value) {
+    if (value is String) {
+      final trimmed = value.trim();
+      if (trimmed.isEmpty) {
+        return null;
+      }
+      return trimmed;
+    }
+    return null;
   }
 }
 
@@ -137,8 +304,9 @@ class _TabChip extends StatelessWidget {
         FilledButton(
           onPressed: onTap,
           style: FilledButton.styleFrom(
-            backgroundColor:
-                active ? _ShipmentPageState.green.withOpacity(0.16) : _ShipmentPageState.green.withOpacity(0.08),
+            backgroundColor: active
+                ? _ShipmentPageState.green.withOpacity(0.16)
+                : _ShipmentPageState.green.withOpacity(0.08),
             foregroundColor: Colors.white,
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
             shape: const StadiumBorder(),
@@ -171,11 +339,13 @@ class _ShipmentCard extends StatelessWidget {
     required this.sender,
     required this.receiver,
     required this.status,
+    required this.onDetails,
   });
 
   final String sender;
   final String receiver;
   final String status;
+  final VoidCallback onDetails;
 
   @override
   Widget build(BuildContext context) {
@@ -226,7 +396,7 @@ class _ShipmentCard extends StatelessWidget {
           ),
           const SizedBox(width: 12),
           FilledButton(
-            onPressed: () {},
+            onPressed: onDetails,
             style: FilledButton.styleFrom(
               backgroundColor: _ShipmentPageState.green,
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
@@ -283,4 +453,77 @@ class _InfoRow extends StatelessWidget {
       ],
     );
   }
+}
+
+class _ShipmentMessage extends StatelessWidget {
+  const _ShipmentMessage({
+    required this.icon,
+    required this.message,
+  });
+
+  final IconData icon;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              color: Colors.white54,
+              size: 32,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 15,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ShipmentItem {
+  _ShipmentItem({
+    required this.did,
+    required this.itemName,
+    required this.senderName,
+    required this.receiverName,
+    required this.statusCode,
+    this.statusLabel,
+    this.updatedAt,
+  });
+
+  final String did;
+  final String itemName;
+  final String senderName;
+  final String receiverName;
+  final int statusCode;
+  final String? statusLabel;
+  final DateTime? updatedAt;
+
+  bool get isCompleted => statusCode >= 4;
+
+  bool get isCancelled {
+    if (statusCode <= 0) {
+      return true;
+    }
+    final label = statusLabel?.toLowerCase() ?? '';
+    return label.contains('ยกเลิก') ||
+        label.contains('cancel') ||
+        label.contains('ล้มเหลว') ||
+        label.contains('fail');
+  }
+
+  bool get isInProgress => !isCompleted && !isCancelled;
 }
