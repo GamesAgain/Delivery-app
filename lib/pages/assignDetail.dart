@@ -70,7 +70,7 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
     };
   }
 
-  void riderAccepted() async {
+  void _handleAcceptDelivery() async {
     if (_isLoading) return; // ป้องกันการกดซ้ำ
 
     setState(() {
@@ -86,10 +86,10 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('เกิดข้อผิดพลาด: ไม่พบผู้ใช้งาน')),
         );
+        setState(() {
+          _isLoading = false;
+        });
       }
-      setState(() {
-        _isLoading = false;
-      });
       return;
     }
 
@@ -99,8 +99,9 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
       if (!deliveryDoc.exists) throw Exception('ไม่พบงานนี้');
       final pickupAddrId = deliveryDoc.data()?['pickup_addr_id'] as String?;
       if (pickupAddrId == null) throw Exception('ไม่พบที่อยู่ผู้ส่ง');
+      final deliveryDocId = deliveryDoc.data()?['did'] as String? ?? deliveryDoc.id;
 
-      // --- 2. ตรวจสอบ Geofence 1 กิโลเมตร (Rule #1) ---
+      // --- 2. ตรวจสอบระยะ 10 กิโลเมตร ---
       final locations = await _getLocations(pickupAddrId);
       final riderLat = locations['riderLat'];
       final riderLng = locations['riderLng'];
@@ -121,9 +122,9 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
         senderLng,
       );
 
-      if (distance > 1000) {
+      if (distance > 10000) {
         throw Exception(
-          'คุณอยู่ไกลเกินไป (${distance.toStringAsFixed(0)} เมตร)',
+          'คุณอยู่ไกลเกินไป (${(distance / 1000).toStringAsFixed(1)} กม.)',
         );
       }
 
@@ -131,6 +132,7 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
       // Transaction จะช่วยป้องกันการรับงานซ้อน
       await db.runTransaction((transaction) async {
         final deliveryRef = db.collection('delivery').doc(deliveryId);
+        final assignmentRef = db.collection('assignment').doc(deliveryDocId);
 
         // เช็กสถานะงาน (Rule #3: งาน 1 งาน รับได้ 1 คน)
         final deliverySnap = await transaction.get(deliveryRef);
@@ -140,17 +142,21 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
           throw Exception('งานนี้ถูกรับไปแล้ว');
         }
 
+        final assignmentSnap = await transaction.get(assignmentRef);
+        if (assignmentSnap.exists) {
+          throw Exception('มีการรับงานนี้แล้ว');
+        }
+
         // --- ถ้าผ่านทุกเงื่อนไข: รับงาน! ---
 
         // 3.1 สร้าง Assignment
-        final newAssignmentRef = db.collection('assignment').doc();
-        transaction.set(newAssignmentRef, {
-          'did': deliveryId,
+        transaction.set(assignmentRef, {
+          'did': deliveryDocId,
           'rid': riderId,
           'status_code': 2, // 2 = ไรเดอร์รับงาน
           'accepted_at': FieldValue.serverTimestamp(),
-          'picked_at': null,
           'delivered_at': null,
+          'picked_at': null,
         });
 
         // 3.2 อัปเดตสถานะ Delivery
@@ -183,6 +189,10 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
           'trackingPage',
           queryParameters: {'did': deliveryId},
         );
+
+        setState(() {
+          _isLoading = false;
+        });
       }
     } catch (e) {
       if (mounted) {
@@ -192,10 +202,10 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
             backgroundColor: Colors.red,
           ),
         );
+        setState(() {
+          _isLoading = false;
+        });
       }
-      setState(() {
-        _isLoading = false;
-      });
     }
   }
 
@@ -423,7 +433,7 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
 
                       FilledButton.icon(
                         // ‼ เปลี่ยน onPressed เป็นฟังก์ชันใหม่
-                        onPressed: _isLoading ? null : riderAccepted,
+                        onPressed: _isLoading ? null : _handleAcceptDelivery,
                         style: FilledButton.styleFrom(
                           backgroundColor: AppColors.primary,
                           disabledBackgroundColor: Colors.grey[600],
