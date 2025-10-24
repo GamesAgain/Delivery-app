@@ -796,7 +796,16 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
     );
 
     if (!mounted) return;
-    context.goNamed('assignmentList');
+
+    final riderId = FirebaseAuth.instance.currentUser?.uid;
+    if (riderId != null && riderId.isNotEmpty) {
+      context.goNamed(
+        'assingmentlist',
+        queryParameters: {'uid': riderId},
+      );
+    } else {
+      context.go('/');
+    }
   }
 
   // --- 6. Build Method (UI Structure) ---
