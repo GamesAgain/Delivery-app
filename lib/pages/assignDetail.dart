@@ -2,10 +2,12 @@ import 'package:bootstrap_icons/bootstrap_icons.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:delivery_app/theme/app_theme.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
+import 'package:latlong2/latlong.dart';
 
 class AssignDetailPage extends StatefulWidget {
   final String did;
@@ -98,7 +100,7 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
       final pickupAddrId = deliveryDoc.data()?['pickup_addr_id'] as String?;
       if (pickupAddrId == null) throw Exception('ไม่พบที่อยู่ผู้ส่ง');
 
-      // --- 2. ตรวจสอบ Geofence 20 เมตร (Rule #1) ---
+      // --- 2. ตรวจสอบ Geofence 1 กิโลเมตร (Rule #1) ---
       final locations = await _getLocations(pickupAddrId);
       final riderLat = locations['riderLat'];
       final riderLng = locations['riderLng'];
@@ -119,7 +121,7 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
         senderLng,
       );
 
-      if (distance > 20) {
+      if (distance > 1000) {
         throw Exception(
           'คุณอยู่ไกลเกินไป (${distance.toStringAsFixed(0)} เมตร)',
         );
@@ -248,6 +250,118 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
                       // ชื่อสินค้า
                       Text(d.itemName),
                       const SizedBox(height: 12),
+
+                      FutureBuilder<Map<String, double?>>(
+                        future: _getLocations(d.pickupAddrId),
+                        builder: (context, locSnap) {
+                          if (locSnap.connectionState == ConnectionState.waiting) {
+                            return _MapContainer(
+                              child: const Center(
+                                child: CircularProgressIndicator(),
+                              ),
+                            );
+                          }
+
+                          if (locSnap.hasError) {
+                            return _MapContainer(
+                              child: Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Text(
+                                    'ไม่สามารถโหลดแผนที่ได้',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(color: Colors.white70),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              ),
+                            );
+                          }
+
+                          final data = locSnap.data;
+                          final riderLat = data?['riderLat'];
+                          final riderLng = data?['riderLng'];
+                          final destLat = data?['senderLat'];
+                          final destLng = data?['senderLng'];
+
+                          if (riderLat == null ||
+                              riderLng == null ||
+                              destLat == null ||
+                              destLng == null) {
+                            return _MapContainer(
+                              child: Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Text(
+                                    'ไม่มีพิกัดสำหรับแสดงแผนที่',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(color: Colors.white70),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              ),
+                            );
+                          }
+
+                          final riderPoint = LatLng(riderLat, riderLng);
+                          final destinationPoint = LatLng(destLat, destLng);
+                          final bounds = LatLngBounds.fromPoints(
+                            [riderPoint, destinationPoint],
+                          );
+
+                          return _MapContainer(
+                            child: FlutterMap(
+                              options: MapOptions(
+                                initialCameraFit: CameraFit.bounds(
+                                  bounds: bounds,
+                                  padding: const EdgeInsets.all(40),
+                                ),
+                                interactionOptions: const InteractionOptions(
+                                  flags: InteractiveFlag.pinchZoom |
+                                      InteractiveFlag.drag |
+                                      InteractiveFlag.doubleTapZoom,
+                                ),
+                              ),
+                              children: [
+                                TileLayer(
+                                  urlTemplate:
+                                      'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                                  userAgentPackageName: 'com.delivery.app',
+                                ),
+                                MarkerLayer(
+                                  markers: [
+                                    Marker(
+                                      point: riderPoint,
+                                      width: 60,
+                                      height: 60,
+                                      child: const _MapMarker(
+                                        color: AppColors.primary,
+                                        icon: BootstrapIcons.geo_alt_fill,
+                                        label: 'ฉัน',
+                                      ),
+                                    ),
+                                    Marker(
+                                      point: destinationPoint,
+                                      width: 60,
+                                      height: 60,
+                                      child: const _MapMarker(
+                                        color: Color(0xFFEAB308),
+                                        icon: BootstrapIcons.pin_map,
+                                        label: 'ปลายทาง',
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 16),
 
                       // รูปภาพสินค้า/พัสดุ
                       RectImgNetwork(url: d.itemImage, height: 170, radius: 24),
@@ -395,6 +509,80 @@ class _AddressCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _MapContainer extends StatelessWidget {
+  const _MapContainer({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 220,
+      decoration: BoxDecoration(
+        color: const Color(0xFF101522),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withOpacity(0.08)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: child,
+    );
+  }
+}
+
+class _MapMarker extends StatelessWidget {
+  const _MapMarker({
+    required this.color,
+    required this.icon,
+    required this.label,
+  });
+
+  final Color color;
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.25),
+                blurRadius: 8,
+              ),
+            ],
+          ),
+          child: Icon(
+            icon,
+            color: color,
+            size: 20,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: const Color(0xCC111827),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            label,
+            style: textTheme.bodySmall?.copyWith(
+              color: Colors.white,
+              fontSize: 10,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
