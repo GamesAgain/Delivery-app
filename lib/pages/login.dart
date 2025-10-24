@@ -29,6 +29,29 @@ class _LoginPageState extends State<LoginPage> {
   final TextEditingController usernameController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
 
+  Future<String?> _findActiveAssignmentDid(String riderId) async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('assignment')
+          .where('rid', isEqualTo: riderId)
+          .get();
+
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        final statusCode = (data['status_code'] as num?)?.toInt() ?? 0;
+        if (statusCode > 0 && statusCode < 4) {
+          final did = data['did'] as String?;
+          if (did != null && did.isNotEmpty) {
+            return did;
+          }
+        }
+      }
+    } catch (e) {
+      print('Failed to fetch active assignment: $e');
+    }
+    return null;
+  }
+
   // ===== ฟังก์ชัน Login (อีเมลหรือชื่อผู้ใช้) =====
   Future<void> loginUser() async {
     if (_isSubmitting) return;
@@ -108,14 +131,28 @@ class _LoginPageState extends State<LoginPage> {
         throw Exception('ข้อมูลโปรไฟล์ไม่ถูกต้อง');
       }
 
+      final userProfile = Users.fromMap({
+        ...profile,
+        'uid': userId,
+      });
+
+      if (mounted && (role == 'ไรเดอร์' || userProfile.role == 'ไรเดอร์')) {
+        final activeDid = await _findActiveAssignmentDid(userId);
+        if (!mounted) return;
+        if (activeDid != null) {
+          context.goNamed(
+            'trackingPage',
+            queryParameters: {'did': activeDid},
+          );
+          return;
+        }
+      }
+
       if (!mounted) return;
       context.goNamed(
         'index',
         queryParameters: {'uid': userId},
-        extra: Users.fromMap({
-          ...profile,
-          'uid': userId,
-        }),
+        extra: userProfile,
       );
     } on FirebaseAuthException catch (e) {
       String message;
