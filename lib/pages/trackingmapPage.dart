@@ -319,8 +319,7 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
 
                 // ‼ ลบการเรียก update route ออก
               }
-              // Optional: Update RiderLocation collection in Firestore (if needed elsewhere)
-              // _updateRiderLocationInFirestore(riderId, position);
+              _updateRiderLocationInFirestore(riderId, position);
             }
           },
           onError: (error) {
@@ -335,6 +334,29 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
             }
           },
         );
+  }
+
+  Future<void> _updateRiderLocationInFirestore(
+      String riderId, Position position) async {
+    final did = widget.did;
+    if (did == null || did.isEmpty) {
+      return;
+    }
+
+    try {
+      await FirebaseFirestore.instance.collection('RiderLocation').doc(did).set(
+        {
+          'did': did,
+          'rid': riderId,
+          'lat': position.latitude,
+          'lng': position.longitude,
+          'updated_at': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+    } catch (e) {
+      print('Failed to update rider location: $e');
+    }
   }
 
   // Handles requesting location permissions
