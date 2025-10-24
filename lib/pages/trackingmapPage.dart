@@ -1,6 +1,5 @@
 import 'dart:async';
-import 'dart:io';
-import 'package:bootstrap_icons/bootstrap_icons.dart'; // Ensure this is imported if used in helpers
+import 'package:bootstrap_icons/bootstrap_icons.dart';
 import 'package:delivery_app/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -9,8 +8,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:go_router/go_router.dart';
+import 'package:delivery_app/services/upload_img.dart';
 // import 'package:open_route_service/open_route_service.dart'; // ‼ ลบออก
 
 class TrackingMapPage extends StatefulWidget {
@@ -434,8 +433,8 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
         height: 40.0, // Marker size
         point: riderLatLng, // Marker position
         child: _buildMarkerWidget(
-          'assets/icons/rider_marker.png',
-          Colors.blue,
+          icon: BootstrapIcons.bicycle,
+          color: AppColors.primary,
         ), // Custom widget for marker
       ),
     );
@@ -450,8 +449,8 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
           height: 40.0,
           point: LatLng(_senderAddress!.lat!, _senderAddress!.lng!),
           child: _buildMarkerWidget(
-            'assets/icons/sender_marker.png',
-            Colors.green,
+            icon: BootstrapIcons.box,
+            color: const Color(0xFF38BDF8),
           ),
         ),
       );
@@ -465,8 +464,8 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
           height: 40.0,
           point: LatLng(_receiverAddress!.lat!, _receiverAddress!.lng!),
           child: _buildMarkerWidget(
-            'assets/icons/receiver_marker.png',
-            Colors.red,
+            icon: BootstrapIcons.geo_alt_fill,
+            color: const Color(0xFFF87171),
           ),
         ),
       );
@@ -479,17 +478,51 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
   }
 
   // Builds the widget used for map markers (Image or fallback Icon)
-  Widget _buildMarkerWidget(String iconPath, Color fallbackColor) {
-    // Ensure the asset path is declared in pubspec.yaml under flutter -> assets
-    return Image.asset(
-      iconPath,
-      width: 40,
-      height: 40, // Ensure size consistency
-      errorBuilder: (context, error, stackTrace) {
-        // Log error and return a fallback icon if image fails to load
-        print("Error loading marker icon '$iconPath': $error");
-        return Icon(Icons.location_pin, color: fallbackColor, size: 40);
-      },
+  Widget _buildMarkerWidget({
+    required IconData icon,
+    required Color color,
+  }) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: AppColors.bgsecondary.withOpacity(0.92),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: color.withOpacity(0.7), width: 1.6),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.35),
+                blurRadius: 10,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Icon(
+              icon,
+              color: color,
+              size: 20,
+            ),
+          ),
+        ),
+        Container(
+          width: 10,
+          height: 10,
+          margin: const EdgeInsets.only(top: 4),
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: color.withOpacity(0.4),
+                blurRadius: 6,
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -621,14 +654,18 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
         ),
       );
 
-      final storageRef = FirebaseStorage.instance
-          .ref()
-          .child(
-            'assignment_images/${_assignment!.aid}/${isPickup ? 'pickup' : 'delivery'}_${DateTime.now().millisecondsSinceEpoch}.jpg',
-          );
-      final uploadTask = storageRef.putFile(File(image.path));
-      final snapshot = await uploadTask;
-      final downloadUrl = await snapshot.ref.getDownloadURL();
+      final uploadResult = await UploadImgService.uploadXFile(
+        xfile: image,
+        folder: 'assignments/${_assignment!.aid}',
+        extraFields: {
+          'context': isPickup ? 'pickup' : 'delivery',
+        },
+      );
+
+      final downloadUrl = uploadResult.secureUrl ?? uploadResult.url;
+      if (downloadUrl == null || !uploadResult.success) {
+        throw Exception('Unable to upload proof image. Please try again.');
+      }
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
@@ -888,15 +925,19 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
               maxChildSize: 0.68,
               builder: (context, scrollController) {
                 return Container(
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.vertical(
+                  decoration: BoxDecoration(
+                    color: AppColors.bgsecondary,
+                    borderRadius: const BorderRadius.vertical(
                       top: Radius.circular(28),
                     ),
-                    boxShadow: [
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.05),
+                      width: 1,
+                    ),
+                    boxShadow: const [
                       BoxShadow(
-                        blurRadius: 20,
-                        color: Colors.black26,
+                        blurRadius: 24,
+                        color: Color(0x66000000),
                       ),
                     ],
                   ),
@@ -914,7 +955,7 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
                               height: 4,
                               margin: const EdgeInsets.only(bottom: 16),
                               decoration: BoxDecoration(
-                                color: Colors.grey.shade300,
+                                color: Colors.white.withOpacity(0.24),
                                 borderRadius: BorderRadius.circular(20),
                               ),
                             ),
@@ -937,7 +978,11 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
                             const Center(
                               child: Padding(
                                 padding: EdgeInsets.all(24.0),
-                                child: CircularProgressIndicator(),
+                                child: CircularProgressIndicator(
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    AppColors.primary,
+                                  ),
+                                ),
                               ),
                             )
                           else if (_errorMessage != null)
@@ -946,7 +991,7 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
                                 padding: const EdgeInsets.all(16.0),
                                 child: Text(
                                   'Error: $_errorMessage',
-                                  style: const TextStyle(color: Colors.red),
+                                  style: const TextStyle(color: Colors.redAccent),
                                 ),
                               ),
                             )
@@ -977,7 +1022,7 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
                                         SizedBox(width: 8),
                                         Text(
                                           'Delivery Completed!',
-                                          style: TextStyle(
+                                          style: const TextStyle(
                                             color: AppColors.primary,
                                             fontWeight: FontWeight.bold,
                                           ),
@@ -991,7 +1036,10 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
                             const Center(
                               child: Padding(
                                 padding: EdgeInsets.all(16.0),
-                                child: Text('Waiting for assignment details...'),
+                                child: Text(
+                                  'Waiting for assignment details...',
+                                  style: const TextStyle(color: Colors.white70),
+                                ),
                               ),
                             ),
                         ],
@@ -1017,8 +1065,16 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.grey.shade100,
+        color: AppColors.bg.withOpacity(0.85),
         borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withOpacity(0.06)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.35),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1027,7 +1083,7 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.12),
+              color: AppColors.primary.withOpacity(0.15),
               shape: BoxShape.circle,
             ),
             child: Icon(
@@ -1046,7 +1102,7 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
                   style: const TextStyle(
                     fontWeight: FontWeight.w600,
                     fontSize: 13,
-                    color: Colors.black87,
+                    color: Colors.white,
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -1054,7 +1110,7 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
                   address,
                   style: const TextStyle(
                     fontSize: 14,
-                    color: Colors.black87,
+                    color: Colors.white70,
                   ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -1181,9 +1237,10 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
   }) {
     String distanceText; // Text indicating distance or status
     if (distance == double.infinity) {
-      distanceText = "(กำลังตรวจสอบ...)";
+      distanceText = "(กำลังตรวจสอบตำแหน่ง...)";
     } else if (!isEnabled) {
-      distanceText = "(${distance.toStringAsFixed(0)}m away)";
+      distanceText =
+          "(${distance.toStringAsFixed(0)}m • ต้องอยู่ในระยะ 20m)";
     } else {
       distanceText = "(พร้อมยืนยัน)";
     }
