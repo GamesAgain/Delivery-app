@@ -73,12 +73,13 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
     final riderLng = (riderLocSnap.data()?['lng'] as num?)?.toDouble();
     final pickupLat = (pickupSnap.data()?['lat'] as num?)?.toDouble();
     final pickupLng = (pickupSnap.data()?['lng'] as num?)?.toDouble();
-    final dropoffLat =
-        (dropoffSnap?.data()?['lat'] as num?)?.toDouble();
-    final dropoffLng =
-        (dropoffSnap?.data()?['lng'] as num?)?.toDouble();
+    final dropoffLat = (dropoffSnap?.data()?['lat'] as num?)?.toDouble();
+    final dropoffLng = (dropoffSnap?.data()?['lng'] as num?)?.toDouble();
 
-    if (riderLat == null || riderLng == null || pickupLat == null || pickupLng == null) {
+    if (riderLat == null ||
+        riderLng == null ||
+        pickupLat == null ||
+        pickupLng == null) {
       throw Exception('ไม่สามารถคำนวณพิกัดได้');
     }
 
@@ -104,9 +105,10 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
           )
         : null;
 
-    final pickupAddress = (pickupSnap.data()?['fullAddress'] as String?)?.trim();
-    final dropoffAddress =
-        (dropoffSnap?.data()?['fullAddress'] as String?)?.trim();
+    final pickupAddress = (pickupSnap.data()?['fullAddress'] as String?)
+        ?.trim();
+    final dropoffAddress = (dropoffSnap?.data()?['fullAddress'] as String?)
+        ?.trim();
 
     return _DeliveryGeoData(
       riderPoint: riderPoint,
@@ -160,7 +162,8 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
       if (!deliveryDoc.exists) throw Exception('ไม่พบงานนี้');
       final pickupAddrId = deliveryDoc.data()?['pickup_addr_id'] as String?;
       if (pickupAddrId == null) throw Exception('ไม่พบที่อยู่ผู้ส่ง');
-      final deliveryDocId = deliveryDoc.data()?['did'] as String? ?? deliveryDoc.id;
+      final deliveryDocId =
+          deliveryDoc.data()?['did'] as String? ?? deliveryDoc.id;
 
       // --- 2. ตรวจสอบระยะ 20 เมตร ---
       final geoData = await _fetchGeoData(
@@ -322,7 +325,6 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
                       Text(d.itemName),
                       const SizedBox(height: 12),
 
-
                       // รูปภาพสินค้า/พัสดุ
                       RectImgNetwork(url: d.itemImage, height: 170, radius: 24),
                       const SizedBox(height: 16),
@@ -330,7 +332,8 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
                       FutureBuilder<_DeliveryGeoData>(
                         future: geoFuture,
                         builder: (context, locSnap) {
-                          if (locSnap.connectionState == ConnectionState.waiting) {
+                          if (locSnap.connectionState ==
+                              ConnectionState.waiting) {
                             return _MapContainer(
                               child: const Center(
                                 child: CircularProgressIndicator(),
@@ -392,7 +395,8 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
                                   padding: const EdgeInsets.all(40),
                                 ),
                                 interactionOptions: const InteractionOptions(
-                                  flags: InteractiveFlag.pinchZoom |
+                                  flags:
+                                      InteractiveFlag.pinchZoom |
                                       InteractiveFlag.drag |
                                       InteractiveFlag.doubleTapZoom,
                                 ),
@@ -422,7 +426,7 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
                                       child: _MapMarker(
                                         color: const Color(0xFF22C55E),
                                         icon: BootstrapIcons.box_seam,
-                                        label: 'จุดรับสินค้า' ,
+                                        label: 'จุดรับ',
                                       ),
                                     ),
                                     if (geo.dropoffPoint != null)
@@ -470,12 +474,15 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
                       FutureBuilder<_DeliveryGeoData>(
                         future: geoFuture,
                         builder: (context, snapshot) {
-                          if (snapshot.connectionState == ConnectionState.waiting) {
+                          if (snapshot.connectionState ==
+                              ConnectionState.waiting) {
                             return const _DistanceSkeleton();
                           }
 
                           if (snapshot.hasError) {
-                            return _DistanceError(message: snapshot.error.toString());
+                            return _DistanceError(
+                              message: snapshot.error.toString(),
+                            );
                           }
 
                           final geo = snapshot.data;
@@ -727,10 +734,9 @@ class _DistanceError extends StatelessWidget {
           Expanded(
             child: Text(
               message,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodyMedium
-                  ?.copyWith(color: Colors.white70),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: Colors.white70),
             ),
           ),
         ],
@@ -772,41 +778,32 @@ class _MapMarker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 72),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.25),
-                  blurRadius: 8,
-                ),
-              ],
-            ),
-            child: Icon(
-              icon,
-              color: color,
-              size: 20,
-            ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(color: Colors.black.withOpacity(0.25), blurRadius: 8),
+            ],
           ),
-          const SizedBox(height: 6),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: const Color(0xCC111827),
-              borderRadius: BorderRadius.circular(12),
-            ),
+          child: Icon(icon, color: color, size: 20),
+        ),
+        const SizedBox(height: 6),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: const Color(0xCC111827),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 160),
             child: Text(
               label,
               maxLines: 2,
-              softWrap: true,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
               style: textTheme.bodySmall?.copyWith(
@@ -815,8 +812,8 @@ class _MapMarker extends StatelessWidget {
               ),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
