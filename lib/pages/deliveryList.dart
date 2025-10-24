@@ -24,6 +24,7 @@ class _DeliverylistPageState extends State<DeliverylistPage> {
   final TextEditingController _searchController = TextEditingController();
   String _searchTerm = '';
   _DeliveryFilter _selectedFilter = _DeliveryFilter.toDeliver;
+  late final Future<_HeaderInfo> _headerInfoFuture = _loadHeaderInfo();
 
   @override
   void dispose() {
@@ -129,6 +130,64 @@ class _DeliverylistPageState extends State<DeliverylistPage> {
         return null;
       }
     });
+  }
+
+  Future<String?> _fetchDefaultAddress(String uid) async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('addresses')
+          .where('uid', isEqualTo: uid)
+          .where('is_default', isEqualTo: 0)
+          .limit(1)
+          .get();
+
+      if (snapshot.docs.isEmpty) {
+        return null;
+      }
+
+      final data = snapshot.docs.first.data();
+      final fullAddress = (data['fullAddress'] as String?)?.trim();
+      if (fullAddress != null && fullAddress.isNotEmpty) {
+        return fullAddress;
+      }
+
+      final addressNumber = (data['addressNumber'] as String?)?.trim();
+      final subDistrict = (data['subDistrict'] as String?)?.trim();
+      final district = (data['district'] as String?)?.trim();
+      final province = (data['province'] as String?)?.trim();
+      final postalCode = (data['postalCode'] as String?)?.trim();
+
+      final parts = [
+        addressNumber,
+        subDistrict,
+        district,
+        province,
+        postalCode,
+      ].where((element) => element != null && element!.isNotEmpty).cast<String>().toList();
+
+      if (parts.isEmpty) {
+        return null;
+      }
+
+      return parts.join(', ');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<_HeaderInfo> _loadHeaderInfo() async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) {
+      return const _HeaderInfo(username: 'Guest', address: '');
+    }
+
+    final profile = await _fetchUserProfile(currentUser.uid);
+    final address = await _fetchDefaultAddress(currentUser.uid);
+
+    return _HeaderInfo(
+      username: profile?.username ?? 'ผู้ใช้งาน',
+      address: address ?? 'ไม่พบที่อยู่',
+    );
   }
 
   Future<String> _computeDeliveryDuration(String deliveryId) async {
@@ -527,23 +586,46 @@ class _DeliverylistPageState extends State<DeliverylistPage> {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    const Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'สรายุทธ บุตรวงษ์',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          SizedBox(height: 2),
-                          Text(
-                            'Maha Sarakham, Thailand',
-                            style: TextStyle(color: Color(0xFFB3C0BA)),
-                          ),
-                        ],
+                    Expanded(
+                      child: FutureBuilder<_HeaderInfo>(
+                        future: _headerInfoFuture,
+                        builder: (context, snapshot) {
+                          final username = snapshot.data?.username;
+                          final address = snapshot.data?.address;
+
+                          final usernameText = username != null && username.isNotEmpty
+                              ? username
+                              : snapshot.connectionState == ConnectionState.waiting
+                                  ? 'กำลังโหลด...'
+                                  : 'ผู้ใช้งาน';
+                          final addressText = address != null && address.isNotEmpty
+                              ? address
+                              : snapshot.connectionState == ConnectionState.waiting
+                                  ? 'กำลังโหลด...'
+                                  : 'ไม่พบที่อยู่';
+
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                usernameText,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                addressText,
+                                style: const TextStyle(color: Color(0xFFB3C0BA)),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          );
+                        },
                       ),
                     ),
                     //  Delivery Logo
@@ -907,6 +989,13 @@ class _DeliveryUiModel {
 
   String get statusAssetPath =>
       'assets/images/Status${clampedStatusCode.toString()}.png';
+}
+
+class _HeaderInfo {
+  const _HeaderInfo({required this.username, required this.address});
+
+  final String username;
+  final String address;
 }
 
 class _UserProfile {
