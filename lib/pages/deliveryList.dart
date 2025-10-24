@@ -54,8 +54,9 @@ class _DeliverylistPageState extends State<DeliverylistPage> {
       return Stream<List<_DeliveryUiModel>>.value(const <_DeliveryUiModel>[]);
     }
 
-    Query<Map<String, dynamic>> query =
-        FirebaseFirestore.instance.collection('delivery');
+    Query<Map<String, dynamic>> query = FirebaseFirestore.instance.collection(
+      'delivery',
+    );
 
     switch (_selectedFilter) {
       case _DeliveryFilter.toDeliver:
@@ -748,65 +749,69 @@ class _DeliverylistPageState extends State<DeliverylistPage> {
             padding: const EdgeInsets.all(16),
             child: Column(
               children: [
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Padding(
-                    padding: const EdgeInsets.only(left: 12),
-                    child: Text(
-                      'Current Delivery',
-                      style: GoogleFonts.poppins(
-                        color: white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: 12),
+                        child: Text(
+                          'Current Delivery',
+                          style: GoogleFonts.poppins(
+                            color: white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
                       ),
                     ),
-                  ),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: 12, bottom: 8),
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: const Color(0x1AFFFFFF),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 2,
+                            ),
+                            child: DropdownButton<_DeliveryFilter>(
+                              value: _selectedFilter,
+                              underline: const SizedBox.shrink(),
+                              dropdownColor: const Color(0xFF1F2937),
+                              iconEnabledColor: white,
+                              style: GoogleFonts.poppins(color: white),
+                              onChanged: (value) {
+                                if (value == null) {
+                                  return;
+                                }
+                                setState(() {
+                                  _selectedFilter = value;
+                                });
+                              },
+                              items: _DeliveryFilter.values
+                                  .map(
+                                    (filter) => DropdownMenuItem(
+                                      value: filter,
+                                      child: Text(filter.label),
+                                    ),
+                                  )
+                                  .toList(),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
 
                 // ---------- List Delivery (เลื่อนเฉพาะส่วนนี้) ----------
                 const SizedBox(height: 12),
-
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Padding(
-                    padding: const EdgeInsets.only(left: 12, bottom: 8),
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: const Color(0x1AFFFFFF),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 4,
-                        ),
-                        child: DropdownButton<_DeliveryFilter>(
-                          value: _selectedFilter,
-                          underline: const SizedBox.shrink(),
-                          dropdownColor: const Color(0xFF1F2937),
-                          iconEnabledColor: white,
-                          style: GoogleFonts.poppins(color: white),
-                          onChanged: (value) {
-                            if (value == null) {
-                              return;
-                            }
-                            setState(() {
-                              _selectedFilter = value;
-                            });
-                          },
-                          items: _DeliveryFilter.values
-                              .map(
-                                (filter) => DropdownMenuItem(
-                                  value: filter,
-                                  child: Text(filter.label),
-                                ),
-                              )
-                              .toList(),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
 
                 // ใช้ Expanded ให้ ListView ภายในเลื่อนโดยไม่เกิด overflow
                 Expanded(
@@ -911,10 +916,7 @@ class _UserProfile {
   final String username;
 }
 
-enum _DeliveryFilter {
-  toDeliver,
-  toReceive,
-}
+enum _DeliveryFilter { toDeliver, toReceive }
 
 extension on _DeliveryFilter {
   String get label {

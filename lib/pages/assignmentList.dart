@@ -188,7 +188,8 @@ class _AssignmentlistState extends State<Assignmentlist> {
     final senderProfile = await _fetchUserProfile(senderUid);
     final receiverProfile = await _fetchUserProfile(receiverUid);
 
-    final pickupAddress = await fetchAddressById(pickupAddrId) ??
+    final pickupAddress =
+        await fetchAddressById(pickupAddrId) ??
         await fetchUserDefaultAddress(senderUid);
     final dropoffAddress = await fetchAddressById(dropoffAddrId);
 
@@ -495,19 +496,16 @@ class _AssignmentlistState extends State<Assignmentlist> {
                 color: Color(0xFF16A34A),
                 size: 12,
               ),
-                            const SizedBox(width: 4), // ‼ เพิ่มช่องว่าง
+              const SizedBox(width: 4), // ‼ เพิ่มช่องว่าง
               Align(
                 alignment: AlignmentGeometry.bottomLeft,
                 child: Text(
-                                        // ‼ แก้ไข: ใช้ note ที่กัน null แล้ว
-                                        'จุดรับสินค้า : ',
-                                        style: TextStyle(
-                                          color: subtitleColor,
-                                          fontSize: 12,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
+                  // ‼ แก้ไข: ใช้ note ที่กัน null แล้ว
+                  'จุดรับสินค้า : ',
+                  style: TextStyle(color: subtitleColor, fontSize: 12),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ],
           ),
