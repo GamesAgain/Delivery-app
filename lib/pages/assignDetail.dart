@@ -203,21 +203,10 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
       );
 
       final distanceToPickup = geoData.distanceToPickup;
-      final distanceToDropoff = geoData.distanceToDropoff;
 
       if (distanceToPickup > 20) {
         throw Exception(
           'คุณต้องอยู่ใกล้จุดรับสินค้าไม่เกิน 20 เมตร (ปัจจุบัน ${distanceToPickup.toStringAsFixed(0)} ม.)',
-        );
-      }
-
-      if (distanceToDropoff == null) {
-        throw Exception('ไม่พบพิกัดจุดส่งสินค้า');
-      }
-
-      if (distanceToDropoff > 20) {
-        throw Exception(
-          'คุณต้องอยู่ใกล้จุดส่งสินค้าไม่เกิน 20 เมตร (ปัจจุบัน ${distanceToDropoff.toStringAsFixed(0)} ม.)',
         );
       }
 
