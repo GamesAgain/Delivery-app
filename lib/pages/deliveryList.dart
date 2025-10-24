@@ -23,6 +23,7 @@ class _DeliverylistPageState extends State<DeliverylistPage> {
   final Map<String, Future<_UserProfile?>> _userCache = {};
   final TextEditingController _searchController = TextEditingController();
   String _searchTerm = '';
+  _DeliveryFilter _selectedFilter = _DeliveryFilter.toDeliver;
 
   @override
   void dispose() {
@@ -53,14 +54,22 @@ class _DeliverylistPageState extends State<DeliverylistPage> {
       return Stream<List<_DeliveryUiModel>>.value(const <_DeliveryUiModel>[]);
     }
 
-    return FirebaseFirestore.instance
-        .collection('delivery')
-        .where('sender_uid', isEqualTo: currentUser.uid)
-        .snapshots()
-        .asyncMap((snapshot) async {
-          final futures = snapshot.docs.map(_buildUiModel).toList();
-          return Future.wait(futures);
-        });
+    Query<Map<String, dynamic>> query =
+        FirebaseFirestore.instance.collection('delivery');
+
+    switch (_selectedFilter) {
+      case _DeliveryFilter.toDeliver:
+        query = query.where('sender_uid', isEqualTo: currentUser.uid);
+        break;
+      case _DeliveryFilter.toReceive:
+        query = query.where('receiver_uid', isEqualTo: currentUser.uid);
+        break;
+    }
+
+    return query.snapshots().asyncMap((snapshot) async {
+      final futures = snapshot.docs.map(_buildUiModel).toList();
+      return Future.wait(futures);
+    });
   }
 
   Future<_DeliveryUiModel> _buildUiModel(
@@ -757,6 +766,48 @@ class _DeliverylistPageState extends State<DeliverylistPage> {
                 // ---------- List Delivery (เลื่อนเฉพาะส่วนนี้) ----------
                 const SizedBox(height: 12),
 
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 12, bottom: 8),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: const Color(0x1AFFFFFF),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 4,
+                        ),
+                        child: DropdownButton<_DeliveryFilter>(
+                          value: _selectedFilter,
+                          underline: const SizedBox.shrink(),
+                          dropdownColor: const Color(0xFF1F2937),
+                          iconEnabledColor: white,
+                          style: GoogleFonts.poppins(color: white),
+                          onChanged: (value) {
+                            if (value == null) {
+                              return;
+                            }
+                            setState(() {
+                              _selectedFilter = value;
+                            });
+                          },
+                          items: _DeliveryFilter.values
+                              .map(
+                                (filter) => DropdownMenuItem(
+                                  value: filter,
+                                  child: Text(filter.label),
+                                ),
+                              )
+                              .toList(),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
                 // ใช้ Expanded ให้ ListView ภายในเลื่อนโดยไม่เกิด overflow
                 Expanded(
                   child: StreamBuilder<List<_DeliveryUiModel>>(
@@ -858,4 +909,20 @@ class _UserProfile {
 
   final String uid;
   final String username;
+}
+
+enum _DeliveryFilter {
+  toDeliver,
+  toReceive,
+}
+
+extension on _DeliveryFilter {
+  String get label {
+    switch (this) {
+      case _DeliveryFilter.toDeliver:
+        return 'ที่ต้องจัดส่ง';
+      case _DeliveryFilter.toReceive:
+        return 'ที่ต้องได้รับ';
+    }
+  }
 }
