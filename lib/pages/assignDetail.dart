@@ -415,9 +415,7 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
                                       child: _MapMarker(
                                         color: const Color(0xFF22C55E),
                                         icon: BootstrapIcons.box_seam,
-                                        label: geo.pickupAddress?.isNotEmpty == true
-                                            ? geo.pickupAddress!
-                                            : 'จุดรับสินค้า',
+                                        label: 'จุดรับสินค้า' ,
                                       ),
                                     ),
                                     if (geo.dropoffPoint != null)
@@ -428,9 +426,7 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
                                         child: _MapMarker(
                                           color: const Color(0xFFEAB308),
                                           icon: BootstrapIcons.pin_map,
-                                          label: geo.dropoffAddress?.isNotEmpty == true
-                                              ? geo.dropoffAddress!
-                                              : 'ปลายทาง',
+                                          label: 'ปลายทาง',
                                         ),
                                       ),
                                   ],
