@@ -162,21 +162,28 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
       if (pickupAddrId == null) throw Exception('ไม่พบที่อยู่ผู้ส่ง');
       final deliveryDocId = deliveryDoc.data()?['did'] as String? ?? deliveryDoc.id;
 
-      // --- 2. ตรวจสอบระยะ 1 กิโลเมตร ---
+      // --- 2. ตรวจสอบระยะ 20 เมตร ---
       final geoData = await _fetchGeoData(
         pickupAddrId: pickupAddrId,
         dropoffAddrId: deliveryDoc.data()?['dropoff_addr_id'] as String? ?? '',
       );
 
-      final distance = geoData.distanceToPickup;
+      final distanceToPickup = geoData.distanceToPickup;
+      final distanceToDropoff = geoData.distanceToDropoff;
 
-      if (distance == null) {
-        throw Exception('ไม่สามารถคำนวณระยะทางได้ (ข้อมูลพิกัดไม่ครบ)');
+      if (distanceToPickup > 20) {
+        throw Exception(
+          'คุณต้องอยู่ใกล้จุดรับสินค้าไม่เกิน 20 เมตร (ปัจจุบัน ${distanceToPickup.toStringAsFixed(0)} ม.)',
+        );
       }
 
-      if (distance > 1000) {
+      if (distanceToDropoff == null) {
+        throw Exception('ไม่พบพิกัดจุดส่งสินค้า');
+      }
+
+      if (distanceToDropoff > 20) {
         throw Exception(
-          'คุณอยู่ไกลเกินไป (${(distance / 1000).toStringAsFixed(2)} กม.)',
+          'คุณต้องอยู่ใกล้จุดส่งสินค้าไม่เกิน 20 เมตร (ปัจจุบัน ${distanceToDropoff.toStringAsFixed(0)} ม.)',
         );
       }
 
