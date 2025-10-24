@@ -1,15 +1,16 @@
 import 'dart:async';
 import 'package:bootstrap_icons/bootstrap_icons.dart';
-import 'package:delivery_app/theme/app_theme.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:go_router/go_router.dart';
 import 'package:delivery_app/services/upload_img.dart';
+import 'package:delivery_app/theme/app_theme.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart' as fm;
+import 'package:geolocator/geolocator.dart';
+import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:latlong2/latlong.dart' as ll;
 // import 'package:open_route_service/open_route_service.dart'; // ‼ ลบออก
 
 class TrackingMapPage extends StatefulWidget {
@@ -38,8 +39,8 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
   // --- ‼ ลบตัวแปรเส้นนำทางออก ---
 
   // --- Map Controller (flutter_map) ---
-  final MapController _mapController =
-      MapController(); // Controller for map interactions
+  final fm.MapController _mapController =
+      fm.MapController(); // Controller for map interactions
 
   // --- Stream Subscriptions ---
   StreamSubscription<Position>?
@@ -47,7 +48,7 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
   StreamSubscription? _assignmentSubscription; // For assignment status updates
 
   // --- Map Markers (flutter_map) ---
-  List<Marker> _markers = []; // List to hold map markers
+  List<fm.Marker> _markers = []; // List to hold map markers
 
   @override
   void initState() {
@@ -176,7 +177,7 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
       // Set initial map camera position after a short delay, focusing on sender if available
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && _riderPosition == null && _senderAddress?.lat != null) {
-          _moveCamera(LatLng(_senderAddress!.lat!, _senderAddress!.lng!), 15.0);
+          _moveCamera(ll.LatLng(_senderAddress!.lat!, _senderAddress!.lng!), 15.0);
         }
       });
 
@@ -306,7 +307,7 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
         Geolocator.getPositionStream(locationSettings: locationSettings).listen(
           (Position position) {
             if (mounted) {
-              final newPos = LatLng(position.latitude, position.longitude);
+              final newPos = ll.LatLng(position.latitude, position.longitude);
               // Only move camera automatically on the *first* location update
               bool needsCameraMove = _riderPosition == null;
               setState(() {
@@ -439,113 +440,182 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
   // --- 4. Map Logic ---
   // Updates the list of markers displayed on the map based on current state
   void _updateMapMarkers() {
-    if (!mounted || _riderPosition == null)
-      return; // Need rider position and widget mounted
+    if (!mounted) return;
 
-    final List<Marker> currentMarkers = []; // Start with an empty list
-    final riderLatLng = LatLng(
-      _riderPosition!.latitude,
-      _riderPosition!.longitude,
-    );
+    final List<fm.Marker> currentMarkers = [];
+    final riderPosition = _riderPosition;
 
-    // Add Rider marker (always shown)
-    currentMarkers.add(
-      Marker(
-        width: 48.0,
-        height: 64.0, // Marker size
-        point: riderLatLng, // Marker position
-        child: _buildMarkerWidget(
-          icon: BootstrapIcons.bicycle,
-          color: AppColors.primary,
-        ), // Custom widget for marker
-      ),
-    );
-
-    final int statusCode = _assignment?.statusCode ?? 0; // Get current assignment status
-
-    // แสดงหมุดผู้ส่ง (Sender) เฉพาะก่อนรับของ (status < 3)
-    if (statusCode < 3 && _senderAddress?.lat != null) {
+    if (riderPosition != null) {
       currentMarkers.add(
-        Marker(
-          width: 48.0,
-          height: 64.0,
-          point: LatLng(_senderAddress!.lat!, _senderAddress!.lng!),
-          child: _buildMarkerWidget(
-            icon: BootstrapIcons.box,
-            color: const Color(0xFF38BDF8),
-          ),
+        _createMarker(
+          position: ll.LatLng(riderPosition.latitude, riderPosition.longitude),
+          type: _MarkerType.rider,
+          label: _riderName,
         ),
       );
     }
 
-    // แสดงหมุดผู้รับ (Receiver) หลังจากรับของแล้ว (status >= 3)
-    if (statusCode >= 3 && _receiverAddress?.lat != null) {
+    final int statusCode = _assignment?.statusCode ?? 0;
+
+    if (statusCode < 3 && _senderAddress?.lat != null && _senderAddress?.lng != null) {
       currentMarkers.add(
-        Marker(
-          width: 48.0,
-          height: 64.0,
-          point: LatLng(_receiverAddress!.lat!, _receiverAddress!.lng!),
-          child: _buildMarkerWidget(
-            icon: BootstrapIcons.geo_alt_fill,
-            color: const Color(0xFFF87171),
-          ),
+        _createMarker(
+          position: ll.LatLng(_senderAddress!.lat!, _senderAddress!.lng!),
+          type: _MarkerType.pickup,
+          label: _senderName,
         ),
       );
     }
 
-    // Update the state to rebuild the map with the new markers
+    if (statusCode >= 3 &&
+        _receiverAddress?.lat != null &&
+        _receiverAddress?.lng != null) {
+      currentMarkers.add(
+        _createMarker(
+          position: ll.LatLng(_receiverAddress!.lat!, _receiverAddress!.lng!),
+          type: _MarkerType.dropoff,
+          label: _receiverName,
+        ),
+      );
+    }
+
     setState(() {
       _markers = currentMarkers;
     });
   }
 
-  // Builds the widget used for map markers (Image or fallback Icon)
-  Widget _buildMarkerWidget({
-    required IconData icon,
-    required Color color,
+  fm.Marker _createMarker({
+    required ll.LatLng position,
+    required _MarkerType type,
+    String? label,
   }) {
-    return SizedBox(
-      width: 48,
-      height: 64,
+    final resolvedLabel = _markerLabel(type, label: label);
+    final color = _markerColor(type);
+
+    return fm.Marker(
+      width: 110,
+      height: 90,
+      point: position,
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          DecoratedBox(
-            decoration: BoxDecoration(
-              color: AppColors.bgsecondary.withOpacity(0.92),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: color.withOpacity(0.7), width: 1.6),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.35),
-                  blurRadius: 10,
-                  offset: const Offset(0, 6),
+          Icon(
+            _markerIcon(type),
+            color: color,
+            size: type == _MarkerType.rider ? 42 : 34,
+          ),
+          if (resolvedLabel.isNotEmpty)
+            Container(
+              margin: const EdgeInsets.only(top: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: AppColors.bgsecondary.withOpacity(0.9),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: color.withOpacity(0.7), width: 1.2),
+              ),
+              child: Text(
+                resolvedLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.poppins(
+                  color: color,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 10,
                 ),
-              ],
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Icon(
-                icon,
-                color: color,
-                size: 20,
               ),
             ),
-          ),
-          Container(
-            width: 10,
-            height: 10,
-            margin: const EdgeInsets.only(top: 4),
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: color.withOpacity(0.4),
-                  blurRadius: 6,
-                ),
-              ],
+        ],
+      ),
+    );
+  }
+
+  Color _markerColor(_MarkerType type) {
+    switch (type) {
+      case _MarkerType.pickup:
+        return const Color(0xFF38BDF8);
+      case _MarkerType.dropoff:
+        return const Color(0xFFF87171);
+      case _MarkerType.rider:
+        return AppColors.primary;
+    }
+  }
+
+  IconData _markerIcon(_MarkerType type) {
+    switch (type) {
+      case _MarkerType.pickup:
+        return BootstrapIcons.box;
+      case _MarkerType.dropoff:
+        return BootstrapIcons.geo_alt_fill;
+      case _MarkerType.rider:
+        return BootstrapIcons.bicycle;
+    }
+  }
+
+  String _markerLabel(_MarkerType type, {String? label}) {
+    if (label != null && label.trim().isNotEmpty) {
+      return label;
+    }
+    switch (type) {
+      case _MarkerType.pickup:
+        return 'ผู้ส่ง';
+      case _MarkerType.dropoff:
+        return 'ผู้รับ';
+      case _MarkerType.rider:
+        return 'ไรเดอร์';
+    }
+  }
+
+  Widget _buildMapMessage(String title, String subtitle) {
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.6),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              title,
+              style: GoogleFonts.poppins(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.poppins(
+                color: Colors.white70,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorBanner(String message) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0x99EF4444),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          const Icon(BootstrapIcons.wifi_off, color: Colors.white),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: GoogleFonts.poppins(
+                color: Colors.white,
+                fontSize: 12,
+              ),
             ),
           ),
         ],
@@ -553,8 +623,82 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
     );
   }
 
+  Widget _buildTrackingMap(ll.LatLng initialCenter, double initialZoom) {
+    final bool isWaitingForInitialData = _isLoading && _assignment == null;
+    final bool hasMarkers = _markers.isNotEmpty;
+    final bool shouldShowNoLocationMessage =
+        !isWaitingForInitialData && _riderPosition == null;
+
+    final stackChildren = <Widget>[
+      fm.FlutterMap(
+        mapController: _mapController,
+        options: fm.MapOptions(
+          initialCenter: initialCenter,
+          initialZoom: initialZoom,
+          minZoom: 10.0,
+          maxZoom: 18.0,
+          onMapReady: () {
+            if (mounted) {
+              _updateMapMarkers();
+            }
+          },
+          interactionOptions: const fm.InteractionOptions(
+            flags: fm.InteractiveFlag.pinchZoom | fm.InteractiveFlag.drag,
+          ),
+        ),
+        children: [
+          fm.TileLayer(
+            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+            userAgentPackageName: 'com.example.delivery_app',
+          ),
+          fm.MarkerLayer(markers: _markers),
+        ],
+      ),
+    ];
+
+    if (isWaitingForInitialData) {
+      stackChildren.add(
+        _buildMapMessage(
+          'กำลังเตรียมข้อมูลการจัดส่ง',
+          'ระบบกำลังโหลดรายละเอียดและตำแหน่งล่าสุด',
+        ),
+      );
+    } else if (shouldShowNoLocationMessage && !hasMarkers) {
+      stackChildren.add(
+        _buildMapMessage(
+          'ยังไม่มีตำแหน่งเรียลไทม์',
+          'จะแสดงผลทันทีเมื่อได้รับตำแหน่งจากไรเดอร์',
+        ),
+      );
+    }
+
+    final errorMessage = _errorMessage;
+    if (errorMessage != null && errorMessage.isNotEmpty) {
+      stackChildren.add(
+        Positioned(
+          left: 16,
+          right: 16,
+          bottom: 16,
+          child: _buildErrorBanner(errorMessage),
+        ),
+      );
+    }
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: Color(0xFF0B0F19),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(0),
+        child: Stack(children: stackChildren),
+      ),
+    );
+  }
+
+enum _MarkerType { pickup, dropoff, rider }
+
   // Moves the map camera to the specified target and zoom level
-  void _moveCamera(LatLng target, double zoom) {
+  void _moveCamera(ll.LatLng target, double zoom) {
     // Use try-catch as the map controller might not be ready immediately
     try {
       // Animate the camera smoothly to the new position
@@ -567,12 +711,13 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
   void _centerOnRiderMarker() {
     if (_riderPosition == null) return;
 
-    final LatLng riderLatLng = LatLng(
-      _riderPosition!.latitude,
-      _riderPosition!.longitude,
+    _moveCamera(
+      ll.LatLng(
+        _riderPosition!.latitude,
+        _riderPosition!.longitude,
+      ),
+      _mapController.camera.zoom,
     );
-
-    _moveCamera(riderLatLng, _mapController.camera.zoom);
   }
 
   Widget _buildTrackRiderButton() {
@@ -791,7 +936,7 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
       if (isPickup) {
         if (_receiverAddress?.lat != null && _receiverAddress?.lng != null) {
           _moveCamera(
-            LatLng(_receiverAddress!.lat!, _receiverAddress!.lng!),
+            ll.LatLng(_receiverAddress!.lat!, _receiverAddress!.lng!),
             15.5,
           );
         }
@@ -870,18 +1015,18 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
     bool canPop = (_assignment?.statusCode ?? 0) >= 4;
 
     // Calculate initial map center coordinates
-    LatLng initialCenter = LatLng(
+    ll.LatLng initialCenter = ll.LatLng(
       16.47,
       103.25,
     ); // Default fallback (e.g., city center)
     if (_riderPosition != null) {
-      initialCenter = LatLng(
+      initialCenter = ll.LatLng(
         _riderPosition!.latitude,
         _riderPosition!.longitude,
       );
     } else if (_senderAddress?.lat != null) {
       // If no rider pos, center on sender
-      initialCenter = LatLng(_senderAddress!.lat!, _senderAddress!.lng!);
+      initialCenter = ll.LatLng(_senderAddress!.lat!, _senderAddress!.lng!);
     }
     double initialZoom = 15.0; // Initial map zoom level
 
@@ -951,35 +1096,7 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
             AppColors.bgsecondary, // Set a default background for the body
         body: Stack(
           children: [
-            // --- FlutterMap ---
-            FlutterMap(
-              mapController: _mapController,
-              options: MapOptions(
-                initialCenter: initialCenter,
-                initialZoom: initialZoom,
-                minZoom: 10.0,
-                maxZoom: 18.0, // Set zoom limits
-                onMapReady: () {
-                  // Update markers once map is ready
-                  if (mounted) _updateMapMarkers();
-                },
-                interactionOptions: const InteractionOptions(
-                  flags:
-                      InteractiveFlag.pinchZoom |
-                      InteractiveFlag.drag, // Allow drag and zoom
-                ),
-              ),
-              children: [
-                TileLayer(
-                  urlTemplate:
-                      'https://tile.thunderforest.com/transport/{z}/{x}/{y}@2x.png?apikey=fa73e7cfa2dc480da8d4a68fef53f9e1',
-                  userAgentPackageName: 'com.example.delivery_app',
-                ),
-
-                // --- ‼ ลบ PolylineLayer ออก ---
-                MarkerLayer(markers: _markers), // Display the markers
-              ],
-            ),
+            _buildTrackingMap(initialCenter, initialZoom),
 
             Positioned(
               right: 16,
