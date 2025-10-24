@@ -440,10 +440,10 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
       ),
     );
 
-    int? statusCode = _assignment?.statusCode; // Get current assignment status
+    final int statusCode = _assignment?.statusCode ?? 0; // Get current assignment status
 
-    // ‼ Logic ใหม่: แสดงหมุดผู้ส่ง (Sender) เสมอ ถ้ามีที่อยู่
-    if (_senderAddress?.lat != null) {
+    // แสดงหมุดผู้ส่ง (Sender) เฉพาะก่อนรับของ (status < 3)
+    if (statusCode < 3 && _senderAddress?.lat != null) {
       currentMarkers.add(
         Marker(
           width: 40.0,
@@ -457,8 +457,8 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
       );
     }
 
-    // ‼ Logic ใหม่: แสดงหมุดผู้รับ (Receiver) ต่อเมื่อรับของแล้ว (status 3) หรือส่งแล้ว (status 4)
-    if ((statusCode == 3 || statusCode == 4) && _receiverAddress?.lat != null) {
+    // แสดงหมุดผู้รับ (Receiver) หลังจากรับของแล้ว (status >= 3)
+    if (statusCode >= 3 && _receiverAddress?.lat != null) {
       currentMarkers.add(
         Marker(
           width: 40.0,
@@ -509,6 +509,69 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
   // --- 5. Action Logic (Pickup/Dropoff Confirmation) ---
   // (เดิมคือ 7)
 
+  Future<XFile?> _pickProofImage(bool isPickup) async {
+    if (!mounted) return null;
+
+    final ImageSource? source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16.0),
+                child: Text(
+                  isPickup ? 'เลือกรูปการรับสินค้า' : 'เลือกรูปการส่งสินค้า',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_camera_outlined),
+                title: const Text('ถ่ายรูปด้วยกล้อง'),
+                onTap: () => Navigator.of(sheetContext).pop(ImageSource.camera),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library_outlined),
+                title: const Text('เลือกรูปจากแกลเลอรี'),
+                onTap: () => Navigator.of(sheetContext).pop(ImageSource.gallery),
+              ),
+              const SizedBox(height: 12),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (source == null) {
+      return null;
+    }
+
+    try {
+      final ImagePicker picker = ImagePicker();
+      return await picker.pickImage(
+        source: source,
+        imageQuality: 85,
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('ไม่สามารถเลือกรูปภาพได้: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return null;
+    }
+  }
+
   // Handles the process of confirming pickup or delivery, including image capture and upload
   Future<void> _handleStatusUpdate(
     int nextStatusCode, {
@@ -518,7 +581,7 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
 
     final riderId = FirebaseAuth.instance.currentUser?.uid;
     // Ensure assignment data is available
-    if (riderId == null || _assignment == null) {
+    if (riderId == null || _assignment == null || _delivery == null) {
       print("Cannot update status: Rider ID or Assignment is null.");
       return;
     }
@@ -540,92 +603,123 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
       return;
     }
 
-    setState(() => _isUploading = true); // Indicate start of upload process
+    if (mounted) {
+      setState(() => _isUploading = true); // Indicate start of upload process
+    }
 
     try {
-      // Launch camera to capture image
-      final ImagePicker picker = ImagePicker();
-      final XFile? image = await picker.pickImage(source: ImageSource.camera);
-
-      // If user cancels image capture
+      final XFile? image = await _pickProofImage(isPickup);
       if (image == null) {
-        if (mounted) setState(() => _isUploading = false);
         return;
       }
 
-      // Show uploading indicator
       if (!mounted) return; // Check if widget is still mounted after await
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Uploading image...'),
           duration: Duration(seconds: 15),
-        ), // Longer duration for upload
+        ),
       );
 
-      // Prepare image upload to Firebase Storage
-      final storageRef = FirebaseStorage.instance.ref();
-      final imageFileName =
-          '${isPickup ? 'pickup' : 'delivery'}_${_assignment!.aid}_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      // Define storage path (e.g., assignment_images/assignment_id/image_name.jpg)
-      final imageRef = storageRef.child(
-        'assignment_images/${_assignment!.aid}/$imageFileName',
-      );
+      final storageRef = FirebaseStorage.instance
+          .ref()
+          .child(
+            'assignment_images/${_assignment!.aid}/${isPickup ? 'pickup' : 'delivery'}_${DateTime.now().millisecondsSinceEpoch}.jpg',
+          );
+      final uploadTask = storageRef.putFile(File(image.path));
+      final snapshot = await uploadTask;
+      final downloadUrl = await snapshot.ref.getDownloadURL();
 
-      // Upload the file
-      final uploadTask = imageRef.putFile(File(image.path));
-      final snapshot = await uploadTask; // Wait for upload completion
-      final downloadUrl = await snapshot.ref
-          .getDownloadURL(); // Get the public URL
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
 
-      if (!mounted) return; // Check again after upload
-      ScaffoldMessenger.of(
-        context,
-      ).hideCurrentSnackBar(); // Hide uploading indicator
-
-      // Prepare data to update in Firestore Assignment document
       final assignmentRef = FirebaseFirestore.instance
           .collection('assignment')
           .doc(_assignment!.aid);
-      Map<String, dynamic> updateData = {
+      final deliveryRef = FirebaseFirestore.instance
+          .collection('delivery')
+          .doc(_delivery!.did);
+      final historyRef = FirebaseFirestore.instance
+          .collection('delivery_status_history')
+          .doc();
+
+      final String statusText = isPickup
+          ? 'ไรเดอร์รับสินค้าแล้วและกำลังเดินทางไปส่ง'
+          : 'ไรเดอร์นำส่งสินค้าแล้ว';
+      final String createdByUserId = isPickup
+          ? (_delivery?.senderUid ?? '')
+          : (_delivery?.receiverUid ?? '');
+
+      final Map<String, dynamic> assignmentUpdate = {
         'status_code': nextStatusCode,
-        // Add timestamp and image URL based on whether it's pickup or delivery
         if (isPickup) 'picked_at': FieldValue.serverTimestamp(),
         if (isPickup) 'pickup_image_url': downloadUrl,
         if (!isPickup) 'delivered_at': FieldValue.serverTimestamp(),
         if (!isPickup) 'delivery_image_url': downloadUrl,
       };
 
-      // Use Firestore Batch Write for atomic update of Assignment and potentially Rider status
-      WriteBatch batch = FirebaseFirestore.instance.batch();
-      batch.update(assignmentRef, updateData); // Update assignment data
+      final Map<String, dynamic> deliveryUpdate = {
+        'status_code': nextStatusCode,
+        'status': statusText,
+      };
 
-      // If this is the final delivery step (status code 4), also update the Rider document
+      final Map<String, dynamic> historyData = {
+        'did': _delivery!.did,
+        'created_at': FieldValue.serverTimestamp(),
+        'created_by_rider_id': riderId,
+        'created_by_user_id': createdByUserId,
+        'image': downloadUrl,
+        'status_code': nextStatusCode,
+      };
+
+      final WriteBatch batch = FirebaseFirestore.instance.batch();
+      batch.update(assignmentRef, assignmentUpdate);
+      batch.update(deliveryRef, deliveryUpdate);
+      batch.set(historyRef, historyData);
+
       if (!isPickup && nextStatusCode == 4) {
         final riderRef = FirebaseFirestore.instance
             .collection('riders')
             .doc(riderId);
-        // Set active_assignment_id to null to indicate rider is free
         batch.update(riderRef, {'active_assignment_id': null});
       }
 
-      await batch.commit(); // Commit all updates in the batch
+      await batch.commit();
 
-      // Handle post-update actions (navigation or confirmation message)
-      if (!isPickup && nextStatusCode == 4) {
-        _handleCompletionNavigation(); // Navigate away on completion
-      } else if (mounted) {
-        // Show confirmation for pickup
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Pickup Confirmed!'),
-            backgroundColor: Colors.green,
-          ),
-        );
+      if (mounted) {
+        setState(() {
+          _delivery = _delivery?.copyWith(
+            status: statusText,
+            statusCode: nextStatusCode,
+          );
+        });
+        _updateDistances();
+        _updateMapMarkers();
+      }
+
+      if (isPickup) {
+        if (_receiverAddress?.lat != null && _receiverAddress?.lng != null) {
+          _moveCamera(
+            LatLng(_receiverAddress!.lat!, _receiverAddress!.lng!),
+            15.5,
+          );
+        }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Pickup Confirmed!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } else {
+        await _handleCompletionNavigation();
       }
     } catch (e) {
       // Handle errors during the process
       print("Error updating status: $e");
       if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error updating status: ${e.toString()}'),
@@ -642,17 +736,30 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
   }
 
   // Navigates back to the assignment list upon successful delivery completion
-  void _handleCompletionNavigation() {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Delivery Completed!'),
-          backgroundColor: Colors.green,
-        ),
-      );
-      // Ensure 'assignmentList' is a valid named route in your GoRouter config
-      context.goNamed('assignmentList');
-    }
+  Future<void> _handleCompletionNavigation() async {
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('จัดส่งเสร็จสิ้น'),
+          content: const Text('ไรเดอร์นำส่งสินค้าแล้ว'),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+              },
+              child: const Text('ตกลง'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (!mounted) return;
+    context.goNamed('assignmentList');
   }
 
   // --- 6. Build Method (UI Structure) ---
@@ -776,63 +883,73 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
 
             // --- Bottom Sheet ---
             DraggableScrollableSheet(
-              initialChildSize: 0.35,
-              minChildSize: 0.15,
-              maxChildSize: 0.6,
+              initialChildSize: 0.38,
+              minChildSize: 0.18,
+              maxChildSize: 0.68,
               builder: (context, scrollController) {
                 return Container(
                   decoration: const BoxDecoration(
-                    color: Colors.white, // Bottom sheet background
+                    color: Colors.white,
                     borderRadius: BorderRadius.vertical(
-                      top: Radius.circular(24),
+                      top: Radius.circular(28),
                     ),
                     boxShadow: [
-                      BoxShadow(blurRadius: 10, color: Colors.black26),
+                      BoxShadow(
+                        blurRadius: 20,
+                        color: Colors.black26,
+                      ),
                     ],
                   ),
-                  child: SingleChildScrollView(
-                    // Allows content to scroll if it overflows
-                    controller: scrollController,
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
+                  child: SafeArea(
+                    top: false,
+                    child: SingleChildScrollView(
+                      controller: scrollController,
+                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // --- Address Rows ---
+                          Center(
+                            child: Container(
+                              width: 42,
+                              height: 4,
+                              margin: const EdgeInsets.only(bottom: 16),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade300,
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                            ),
+                          ),
                           _buildAddressRow(
                             'ผู้ส่ง',
                             _senderAddress?.fullAddress ??
                                 (_isLoading ? 'Loading...' : 'N/A'),
                             Icons.arrow_upward,
                           ),
-                          const SizedBox(height: 10),
+                          const SizedBox(height: 12),
                           _buildAddressRow(
                             'ผู้รับ',
                             _receiverAddress?.fullAddress ??
                                 (_isLoading ? 'Loading...' : 'N/A'),
                             Icons.arrow_downward,
                           ),
-                          const Divider(height: 30, thickness: 1),
-
-                          // --- Dynamic Content based on loading/error/data state ---
+                          const SizedBox(height: 20),
                           if (_isLoading)
                             const Center(
                               child: Padding(
-                                padding: EdgeInsets.all(16.0),
+                                padding: EdgeInsets.all(24.0),
                                 child: CircularProgressIndicator(),
                               ),
                             )
                           else if (_errorMessage != null)
                             Center(
                               child: Padding(
-                                padding: EdgeInsets.all(16.0),
+                                padding: const EdgeInsets.all(16.0),
                                 child: Text(
                                   'Error: $_errorMessage',
                                   style: const TextStyle(color: Colors.red),
                                 ),
                               ),
                             )
-                          // Display Rider info and button only when data is loaded successfully
                           else if (_delivery != null && _assignment != null)
                             Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -842,43 +959,39 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
                                   statusText: _getStatusText(
                                     _assignment!.statusCode,
                                   ),
-                                  // Show appropriate address based on status
                                   address:
                                       (_assignment!.statusCode == 2
-                                          ? _senderAddress?.fullAddress
-                                          : _receiverAddress?.fullAddress) ??
-                                      "Loading address...",
+                                              ? _senderAddress?.fullAddress
+                                              : _receiverAddress?.fullAddress) ??
+                                          "Loading address...",
                                 ),
-                                const SizedBox(height: 20),
-                                // Show action button if applicable for current status
+                                const SizedBox(height: 24),
                                 if (actionButton != null) actionButton,
-                                // Show completion message if status is 4 or more
                                 if ((_assignment?.statusCode ?? 0) >= 4)
-                                  const Center(
-                                    child: Padding(
-                                      padding: EdgeInsets.symmetric(
-                                        vertical: 20.0,
-                                      ),
-                                      child: Text(
-                                        "Delivery Completed!",
-                                        style: TextStyle(
-                                          color: AppColors.primary,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 16,
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 24.0),
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: const [
+                                        Icon(Icons.celebration, color: AppColors.primary),
+                                        SizedBox(width: 8),
+                                        Text(
+                                          'Delivery Completed!',
+                                          style: TextStyle(
+                                            color: AppColors.primary,
+                                            fontWeight: FontWeight.bold,
+                                          ),
                                         ),
-                                      ),
+                                      ],
                                     ),
                                   ),
                               ],
                             )
-                          // Fallback message if data is unexpectedly null after loading
                           else
                             const Center(
                               child: Padding(
                                 padding: EdgeInsets.all(16.0),
-                                child: Text(
-                                  'Waiting for assignment details...',
-                                ),
+                                child: Text('Waiting for assignment details...'),
                               ),
                             ),
                         ],
@@ -901,31 +1014,56 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
 
   // Builds a row to display address information
   Widget _buildAddressRow(String label, String address, IconData icon) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, color: Colors.grey[600], size: 20),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: TextStyle(color: Colors.grey[600], fontSize: 13),
-              ),
-              const SizedBox(height: 2),
-              // Handle potential long addresses
-              Text(
-                address,
-                style: const TextStyle(fontSize: 14),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              icon,
+              color: AppColors.primary,
+              size: 20,
+            ),
           ),
-        ),
-      ],
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  address,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Colors.black87,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -936,26 +1074,42 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
     required String address,
   }) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: AppColors.bgsecondary, // Dark background for the card
-        borderRadius: BorderRadius.circular(16),
+        color: AppColors.bgsecondary,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.25),
+            blurRadius: 18,
+            offset: const Offset(0, 10),
+          ),
+        ],
       ),
       child: Row(
         children: [
-          // Placeholder for rider avatar - replace with actual image if available
-          CircleAvatar(
-            radius: 25,
-            backgroundColor: AppColors.primary.withOpacity(
-              0.2,
-            ), // Use theme color variant
-            child: const Icon(
-              BootstrapIcons.person,
-              color: AppColors.primary,
-              size: 30,
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+            ),
+            child: ClipOval(
+              child: Image.asset(
+                'assets/images/rider_avatar.png',
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) {
+                  return const Icon(
+                    BootstrapIcons.person,
+                    color: AppColors.primary,
+                    size: 32,
+                  );
+                },
+              ),
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -965,17 +1119,27 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
                   style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.bold,
-                    fontSize: 16,
+                    fontSize: 18,
                   ),
                 ),
-                const SizedBox(height: 4),
-                // Display current status text (e.g., "Heading to pickup")
-                Text(
-                  statusText,
-                  style: TextStyle(color: Colors.grey[400], fontSize: 13),
+                const SizedBox(height: 8),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Text(
+                    statusText,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
                 ),
-                const SizedBox(height: 6),
-                // Display relevant address (pickup or dropoff)
+                const SizedBox(height: 12),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -1017,49 +1181,87 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
   }) {
     String distanceText; // Text indicating distance or status
     if (distance == double.infinity) {
-      distanceText = "(Checking...)";
+      distanceText = "(กำลังตรวจสอบ...)";
     } else if (!isEnabled) {
       distanceText = "(${distance.toStringAsFixed(0)}m away)";
-    } // Show distance if out of range
-    else {
-      distanceText = "(In range)";
-    } // Indicate when in range
+    } else {
+      distanceText = "(พร้อมยืนยัน)";
+    }
 
-    return SizedBox(
-      width: double.infinity, // Make button full width
-      child: ElevatedButton.icon(
-        // Show loading indicator inside button when uploading
-        icon: isLoading
-            ? Container(
-                width: 20,
-                height: 20,
-                child: const CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.white,
+    final bool canInteract = isEnabled && !isLoading;
+
+    return AnimatedOpacity(
+      duration: const Duration(milliseconds: 200),
+      opacity: canInteract ? 1.0 : 0.7,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(32),
+          onTap: canInteract ? onPressed : null,
+          child: Ink(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(32),
+              gradient: canInteract
+                  ? const LinearGradient(
+                      colors: [Color(0xFF22C55E), Color(0xFF16A34A)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    )
+                  : null,
+              color: canInteract ? null : Colors.grey.shade400,
+              boxShadow: canInteract
+                  ? [
+                      BoxShadow(
+                        color: AppColors.primary.withOpacity(0.35),
+                        blurRadius: 18,
+                        offset: const Offset(0, 6),
+                      ),
+                    ]
+                  : [],
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (isLoading)
+                  const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                else
+                  Icon(icon, color: Colors.white, size: 22),
+                const SizedBox(width: 12),
+                Flexible(
+                  child: RichText(
+                    textAlign: TextAlign.center,
+                    text: TextSpan(
+                      text: label,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 17,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      children: [
+                        TextSpan(
+                          text: ' $distanceText',
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-              )
-            : Icon(icon, size: 20),
-        label: Text(
-          '$label $distanceText',
-        ), // Button text includes distance info
-        onPressed: isLoading
-            ? null
-            : onPressed, // Disable button while uploading or if not enabled (null onPressed)
-        style: ElevatedButton.styleFrom(
-          backgroundColor: isEnabled
-              ? AppColors.primary
-              : Colors.grey[500], // Green when enabled, grey otherwise
-          disabledBackgroundColor:
-              Colors.grey[500], // Explicitly grey when disabled
-          foregroundColor: Colors.white, // Text/icon color
-          padding: const EdgeInsets.symmetric(vertical: 14), // Button padding
-          textStyle: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-          ), // Button text style
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(30),
-          ), // Rounded corners
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -1072,8 +1274,8 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
     return switch (statusCode) {
       2 => 'ผู้ส่ง (กำลังไปรับของ)',
       3 => 'ผู้รับ (กำลังไปส่งของ)',
-      4 => 'Delivery completed',
-      _ => 'Loading status...', // Default/fallback text
+      4 => 'จัดส่งสำเร็จแล้ว',
+      _ => 'กำลังโหลดสถานะ...',
     };
   }
 } // End of _TrackingMapPageState
@@ -1130,6 +1332,33 @@ class Delivery {
       status: d['status'] as String? ?? 'Unknown',
       statusCode: (d['status_code'] as num?)?.toInt() ?? 0,
       createdAt: _toDate(d['created_at']),
+    );
+  }
+
+  Delivery copyWith({
+    String? pickupAddrId,
+    String? dropoffAddrId,
+    String? itemName,
+    String? itemImage,
+    String? note,
+    String? receiverUid,
+    String? senderUid,
+    String? status,
+    int? statusCode,
+    DateTime? createdAt,
+  }) {
+    return Delivery(
+      did: did,
+      pickupAddrId: pickupAddrId ?? this.pickupAddrId,
+      dropoffAddrId: dropoffAddrId ?? this.dropoffAddrId,
+      itemName: itemName ?? this.itemName,
+      itemImage: itemImage ?? this.itemImage,
+      note: note ?? this.note,
+      receiverUid: receiverUid ?? this.receiverUid,
+      senderUid: senderUid ?? this.senderUid,
+      status: status ?? this.status,
+      statusCode: statusCode ?? this.statusCode,
+      createdAt: createdAt ?? this.createdAt,
     );
   }
 }
