@@ -133,7 +133,38 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
     return _geoFuture!;
   }
 
-  void _handleAcceptDelivery() async {
+  Future<void> _confirmAcceptDelivery() async {
+    if (_isLoading) return;
+
+    final shouldAccept = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) {
+            return AlertDialog(
+              title: const Text('ยืนยันการรับงาน'),
+              content: const Text(
+                'หากรับงานนี้แล้วจะไม่สามารถรับงานต่อไปจนกว่าจะจัดส่งสำเร็จ',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('ยกเลิก'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  child: const Text('ยืนยัน'),
+                ),
+              ],
+            );
+          },
+        ) ??
+        false;
+
+    if (shouldAccept && mounted) {
+      await _handleAcceptDelivery();
+    }
+  }
+
+  Future<void> _handleAcceptDelivery() async {
     if (_isLoading) return; // ป้องกันการกดซ้ำ
 
     setState(() {
@@ -546,7 +577,7 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
 
                       FilledButton.icon(
                         // ‼ เปลี่ยน onPressed เป็นฟังก์ชันใหม่
-                        onPressed: _isLoading ? null : _handleAcceptDelivery,
+                        onPressed: _isLoading ? null : _confirmAcceptDelivery,
                         style: FilledButton.styleFrom(
                           backgroundColor: AppColors.primary,
                           disabledBackgroundColor: Colors.grey[600],
