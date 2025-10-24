@@ -299,7 +299,7 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
 
     const LocationSettings locationSettings = LocationSettings(
       accuracy: LocationAccuracy.high, // Use high accuracy for tracking
-      distanceFilter: 10, // Update only when moved at least 10 meters
+      distanceFilter: 1, // Update only when moved at least 10 meters
     );
 
     _riderLocationSubscription =
