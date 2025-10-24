@@ -19,6 +19,8 @@ class AssignDetailPage extends StatefulWidget {
 
 class _AssignDetailPageState extends State<AssignDetailPage> {
   bool _isLoading = false;
+  Future<_DeliveryGeoData>? _geoFuture;
+  String? _geoFutureKey;
 
   Stream<Delivery?> watchDeliveryByDid(String did) {
     return FirebaseFirestore.instance
@@ -40,34 +42,93 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
     return UserAddress.fromSnap(snap);
   }
 
-  Future<Map<String, double?>> _getLocations(String pickupAddrId) async {
+  Future<_DeliveryGeoData> _fetchGeoData({
+    required String pickupAddrId,
+    required String dropoffAddrId,
+  }) async {
     final riderId = FirebaseAuth.instance.currentUser?.uid;
     if (riderId == null) {
       throw Exception('Rider not logged in.');
     }
 
-    // 1. ดึงตำแหน่งไรเดอร์
-    final riderLocSnap = await FirebaseFirestore.instance
-        .collection('RiderLocation')
-        .doc(riderId)
-        .get();
+    final db = FirebaseFirestore.instance;
 
-    // 2. ดึงตำแหน่งผู้ส่ง (จุดรับของ)
-    final senderAddrSnap = await FirebaseFirestore.instance
-        .collection('addresses')
-        .doc(pickupAddrId)
-        .get();
+    final results = await Future.wait([
+      db.collection('RiderLocation').doc(riderId).get(),
+      db.collection('addresses').doc(pickupAddrId).get(),
+    ]);
 
-    if (!riderLocSnap.exists || !senderAddrSnap.exists) {
+    final riderLocSnap = results[0];
+    final pickupSnap = results[1];
+    DocumentSnapshot<Map<String, dynamic>>? dropoffSnap;
+    if (dropoffAddrId.isNotEmpty) {
+      dropoffSnap = await db.collection('addresses').doc(dropoffAddrId).get();
+    }
+
+    if (!riderLocSnap.exists || !pickupSnap.exists) {
       throw Exception('Could not find location data.');
     }
 
-    return {
-      'riderLat': (riderLocSnap.data()?['lat'] as num?)?.toDouble(),
-      'riderLng': (riderLocSnap.data()?['lng'] as num?)?.toDouble(),
-      'senderLat': (senderAddrSnap.data()?['lat'] as num?)?.toDouble(),
-      'senderLng': (senderAddrSnap.data()?['lng'] as num?)?.toDouble(),
-    };
+    final riderLat = (riderLocSnap.data()?['lat'] as num?)?.toDouble();
+    final riderLng = (riderLocSnap.data()?['lng'] as num?)?.toDouble();
+    final pickupLat = (pickupSnap.data()?['lat'] as num?)?.toDouble();
+    final pickupLng = (pickupSnap.data()?['lng'] as num?)?.toDouble();
+    final dropoffLat =
+        (dropoffSnap?.data()?['lat'] as num?)?.toDouble();
+    final dropoffLng =
+        (dropoffSnap?.data()?['lng'] as num?)?.toDouble();
+
+    if (riderLat == null || riderLng == null || pickupLat == null || pickupLng == null) {
+      throw Exception('ไม่สามารถคำนวณพิกัดได้');
+    }
+
+    final pickupPoint = LatLng(pickupLat, pickupLng);
+    final dropoffPoint = (dropoffLat != null && dropoffLng != null)
+        ? LatLng(dropoffLat, dropoffLng)
+        : null;
+    final riderPoint = LatLng(riderLat, riderLng);
+
+    final distanceToPickup = Geolocator.distanceBetween(
+      riderLat,
+      riderLng,
+      pickupLat,
+      pickupLng,
+    );
+
+    final double? distanceToDropoff = (dropoffPoint != null)
+        ? Geolocator.distanceBetween(
+            riderLat,
+            riderLng,
+            dropoffPoint.latitude,
+            dropoffPoint.longitude,
+          )
+        : null;
+
+    final pickupAddress = (pickupSnap.data()?['fullAddress'] as String?)?.trim();
+    final dropoffAddress =
+        (dropoffSnap?.data()?['fullAddress'] as String?)?.trim();
+
+    return _DeliveryGeoData(
+      riderPoint: riderPoint,
+      pickupPoint: pickupPoint,
+      dropoffPoint: dropoffPoint,
+      pickupAddress: pickupAddress,
+      dropoffAddress: dropoffAddress,
+      distanceToPickup: distanceToPickup,
+      distanceToDropoff: distanceToDropoff,
+    );
+  }
+
+  Future<_DeliveryGeoData> _ensureGeoFuture(Delivery delivery) {
+    final shouldRefresh = _geoFuture == null || _geoFutureKey != delivery.did;
+    if (shouldRefresh) {
+      _geoFutureKey = delivery.did;
+      _geoFuture = _fetchGeoData(
+        pickupAddrId: delivery.pickupAddrId,
+        dropoffAddrId: delivery.dropoffAddrId,
+      );
+    }
+    return _geoFuture!;
   }
 
   void _handleAcceptDelivery() async {
@@ -101,30 +162,21 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
       if (pickupAddrId == null) throw Exception('ไม่พบที่อยู่ผู้ส่ง');
       final deliveryDocId = deliveryDoc.data()?['did'] as String? ?? deliveryDoc.id;
 
-      // --- 2. ตรวจสอบระยะ 10 กิโลเมตร ---
-      final locations = await _getLocations(pickupAddrId);
-      final riderLat = locations['riderLat'];
-      final riderLng = locations['riderLng'];
-      final senderLat = locations['senderLat'];
-      final senderLng = locations['senderLng'];
+      // --- 2. ตรวจสอบระยะ 1 กิโลเมตร ---
+      final geoData = await _fetchGeoData(
+        pickupAddrId: pickupAddrId,
+        dropoffAddrId: deliveryDoc.data()?['dropoff_addr_id'] as String? ?? '',
+      );
 
-      if (riderLat == null ||
-          riderLng == null ||
-          senderLat == null ||
-          senderLng == null) {
+      final distance = geoData.distanceToPickup;
+
+      if (distance == null) {
         throw Exception('ไม่สามารถคำนวณระยะทางได้ (ข้อมูลพิกัดไม่ครบ)');
       }
 
-      double distance = Geolocator.distanceBetween(
-        riderLat,
-        riderLng,
-        senderLat,
-        senderLng,
-      );
-
-      if (distance > 10000) {
+      if (distance > 1000) {
         throw Exception(
-          'คุณอยู่ไกลเกินไป (${(distance / 1000).toStringAsFixed(1)} กม.)',
+          'คุณอยู่ไกลเกินไป (${(distance / 1000).toStringAsFixed(2)} กม.)',
         );
       }
 
@@ -232,6 +284,8 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
                 ? '-'
                 : DateFormat('dd MMM yyyy, HH:mm').format(d.createdAt!);
 
+            final geoFuture = _ensureGeoFuture(d);
+
             return SingleChildScrollView(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
               child: Container(
@@ -265,10 +319,9 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
                       // รูปภาพสินค้า/พัสดุ
                       RectImgNetwork(url: d.itemImage, height: 170, radius: 24),
                       const SizedBox(height: 16),
-
                       //แผนที่
-                      FutureBuilder<Map<String, double?>>(
-                        future: _getLocations(d.pickupAddrId),
+                      FutureBuilder<_DeliveryGeoData>(
+                        future: geoFuture,
                         builder: (context, locSnap) {
                           if (locSnap.connectionState == ConnectionState.waiting) {
                             return _MapContainer(
@@ -296,16 +349,9 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
                             );
                           }
 
-                          final data = locSnap.data;
-                          final riderLat = data?['riderLat'];
-                          final riderLng = data?['riderLng'];
-                          final destLat = data?['senderLat'];
-                          final destLng = data?['senderLng'];
+                          final geo = locSnap.data;
 
-                          if (riderLat == null ||
-                              riderLng == null ||
-                              destLat == null ||
-                              destLng == null) {
+                          if (geo == null) {
                             return _MapContainer(
                               child: Center(
                                 child: Padding(
@@ -323,11 +369,13 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
                             );
                           }
 
-                          final riderPoint = LatLng(riderLat, riderLng);
-                          final destinationPoint = LatLng(destLat, destLng);
-                          final bounds = LatLngBounds.fromPoints(
-                            [riderPoint, destinationPoint],
-                          );
+                          final points = <LatLng>[
+                            geo.riderPoint,
+                            geo.pickupPoint,
+                            if (geo.dropoffPoint != null) geo.dropoffPoint!,
+                          ];
+
+                          final bounds = LatLngBounds.fromPoints(points);
 
                           return _MapContainer(
                             child: FlutterMap(
@@ -351,7 +399,7 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
                                 MarkerLayer(
                                   markers: [
                                     Marker(
-                                      point: riderPoint,
+                                      point: geo.riderPoint,
                                       width: 60,
                                       height: 60,
                                       child: const _MapMarker(
@@ -361,15 +409,30 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
                                       ),
                                     ),
                                     Marker(
-                                      point: destinationPoint,
+                                      point: geo.pickupPoint,
                                       width: 60,
                                       height: 60,
-                                      child: const _MapMarker(
-                                        color: Color(0xFFEAB308),
-                                        icon: BootstrapIcons.pin_map,
-                                        label: 'ปลายทาง',
+                                      child: _MapMarker(
+                                        color: const Color(0xFF22C55E),
+                                        icon: BootstrapIcons.box_seam,
+                                        label: geo.pickupAddress?.isNotEmpty == true
+                                            ? geo.pickupAddress!
+                                            : 'จุดรับสินค้า',
                                       ),
                                     ),
+                                    if (geo.dropoffPoint != null)
+                                      Marker(
+                                        point: geo.dropoffPoint!,
+                                        width: 60,
+                                        height: 60,
+                                        child: _MapMarker(
+                                          color: const Color(0xFFEAB308),
+                                          icon: BootstrapIcons.pin_map,
+                                          label: geo.dropoffAddress?.isNotEmpty == true
+                                              ? geo.dropoffAddress!
+                                              : 'ปลายทาง',
+                                        ),
+                                      ),
                                   ],
                                 ),
                               ],
@@ -397,6 +460,46 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
                             'คำอธิบาย: ${d.note.isEmpty ? '— ไม่มีโน้ตเพิ่มเติม —' : d.note}',
                           ),
                         ),
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      FutureBuilder<_DeliveryGeoData>(
+                        future: geoFuture,
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState == ConnectionState.waiting) {
+                            return const _DistanceSkeleton();
+                          }
+
+                          if (snapshot.hasError) {
+                            return _DistanceError(message: snapshot.error.toString());
+                          }
+
+                          final geo = snapshot.data;
+                          if (geo == null) {
+                            return const _DistanceError(
+                              message: 'ไม่สามารถคำนวณระยะทางได้',
+                            );
+                          }
+
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _DistanceTile(
+                                title: 'ระยะห่างถึงจุดรับสินค้า',
+                                distanceInMeters: geo.distanceToPickup,
+                              ),
+                              if (geo.distanceToDropoff != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 12),
+                                  child: _DistanceTile(
+                                    title: 'ระยะห่างถึงปลายทาง',
+                                    distanceInMeters: geo.distanceToDropoff!,
+                                  ),
+                                ),
+                            ],
+                          );
+                        },
                       ),
 
                       const SizedBox(height: 28),
@@ -526,6 +629,113 @@ class _AddressCard extends StatelessWidget {
   }
 }
 
+class _DistanceTile extends StatelessWidget {
+  const _DistanceTile({required this.title, required this.distanceInMeters});
+
+  final String title;
+  final double distanceInMeters;
+
+  String _formatDistance(double meters) {
+    if (meters >= 1000) {
+      return '${(meters / 1000).toStringAsFixed(2)} กม.';
+    }
+    return '${meters.toStringAsFixed(0)} ม.';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: const Color(0xFF101522),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withOpacity(0.08)),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: textTheme.bodyMedium?.copyWith(color: Colors.white70),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            _formatDistance(distanceInMeters),
+            style: textTheme.titleMedium?.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DistanceSkeleton extends StatelessWidget {
+  const _DistanceSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: const Color(0xFF101522),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
+      child: const Center(
+        child: SizedBox(
+          height: 16,
+          width: 16,
+          child: CircularProgressIndicator(strokeWidth: 2.4),
+        ),
+      ),
+    );
+  }
+}
+
+class _DistanceError extends StatelessWidget {
+  const _DistanceError({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: const Color(0xFF101522),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.red.withOpacity(0.25)),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            BootstrapIcons.exclamation_triangle,
+            color: Colors.amber,
+            size: 18,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              message,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodyMedium
+                  ?.copyWith(color: Colors.white70),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _MapContainer extends StatelessWidget {
   const _MapContainer({required this.child});
   final Widget child;
@@ -587,17 +797,43 @@ class _MapMarker extends StatelessWidget {
             color: const Color(0xCC111827),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: Text(
-            label,
-            style: textTheme.bodySmall?.copyWith(
-              color: Colors.white,
-              fontSize: 10,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 160),
+            child: Text(
+              label,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: textTheme.bodySmall?.copyWith(
+                color: Colors.white,
+                fontSize: 10,
+              ),
             ),
           ),
         ),
       ],
     );
   }
+}
+
+class _DeliveryGeoData {
+  _DeliveryGeoData({
+    required this.riderPoint,
+    required this.pickupPoint,
+    this.dropoffPoint,
+    required this.pickupAddress,
+    required this.dropoffAddress,
+    required this.distanceToPickup,
+    required this.distanceToDropoff,
+  });
+
+  final LatLng riderPoint;
+  final LatLng pickupPoint;
+  final LatLng? dropoffPoint;
+  final String? pickupAddress;
+  final String? dropoffAddress;
+  final double distanceToPickup;
+  final double? distanceToDropoff;
 }
 
 class _AddressSkeleton extends StatelessWidget {
