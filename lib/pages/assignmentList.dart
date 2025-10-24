@@ -182,11 +182,15 @@ class _AssignmentlistState extends State<Assignmentlist> {
     final deliveryId = (data['did'] as String?) ?? doc.id;
     final senderUid = data['sender_uid'] as String?;
     final receiverUid = data['receiver_uid'] as String?;
+    final pickupAddrId = data['pickup_addr_id'] as String?;
+    final dropoffAddrId = data['dropoff_addr_id'] as String?;
 
     final senderProfile = await _fetchUserProfile(senderUid);
-    // ‼ senderaddress ตอนนี้มี lat, lng แล้ว
-    final senderaddress = await fetchUserDefaultAddress(senderUid);
     final receiverProfile = await _fetchUserProfile(receiverUid);
+
+    final pickupAddress = await fetchAddressById(pickupAddrId) ??
+        await fetchUserDefaultAddress(senderUid);
+    final dropoffAddress = await fetchAddressById(dropoffAddrId);
 
     return _DeliveryUiModel(
       did: deliveryId,
@@ -198,10 +202,13 @@ class _AssignmentlistState extends State<Assignmentlist> {
       receiverName: receiverProfile?.username ?? 'ไม่พบข้อมูล',
       statusCode: _parseStatusCode(data['status_code']),
       note: (data['note'] as String?) ?? '', // ‼ ป้องกัน null
-      senderaddress: senderaddress?.fulladdress,
+      senderaddress: pickupAddress?.fulladdress,
       // ‼ เพิ่ม: ส่ง lat/lng ของผู้ส่งไปเก็บใน Model
-      senderLat: senderaddress?.lat ?? 0.0,
-      senderLng: senderaddress?.lng ?? 0.0,
+      senderLat: pickupAddress?.lat ?? 0.0,
+      senderLng: pickupAddress?.lng ?? 0.0,
+      dropoffAddress: dropoffAddress?.fulladdress,
+      dropoffLat: dropoffAddress?.lat ?? 0.0,
+      dropoffLng: dropoffAddress?.lng ?? 0.0,
     );
   }
 
@@ -260,6 +267,28 @@ class _AssignmentlistState extends State<Assignmentlist> {
     if (address == null) return null;
 
     // ‼ แก้ไข: คืนค่า UserAddress ที่มี lat/lng ด้วย
+    return UserAddress(fulladdress: address, lat: lat, lng: lng);
+  }
+
+  Future<UserAddress?> fetchAddressById(String? addrId) async {
+    if (addrId == null || addrId.isEmpty) return null;
+
+    final doc = await FirebaseFirestore.instance
+        .collection('addresses')
+        .doc(addrId)
+        .get();
+
+    if (!doc.exists) return null;
+
+    final data = doc.data();
+    if (data == null) return null;
+
+    final address = (data['fullAddress'] as String?)?.trim();
+    if (address == null || address.isEmpty) return null;
+
+    final lat = (data['lat'] as num?)?.toDouble() ?? 0.0;
+    final lng = (data['lng'] as num?)?.toDouble() ?? 0.0;
+
     return UserAddress(fulladdress: address, lat: lat, lng: lng);
   }
 
@@ -512,8 +541,9 @@ class _AssignmentlistState extends State<Assignmentlist> {
                   Color distanceColor = green;
 
                   // 2. ตรวจสอบว่ามีพิกัดผู้ส่งหรือไม่
-                  if (delivery.senderLat == 0.0 && delivery.senderLng == 0.0) {
-                    distanceText = 'No Sender GPS';
+                  if (delivery.dropoffLat == 0.0 &&
+                      delivery.dropoffLng == 0.0) {
+                    distanceText = 'No Dropoff GPS';
                     distanceColor = Colors.orange;
                   }
                   // 3. ตรวจสอบสถานะ Stream ของไรเดอร์
@@ -539,8 +569,8 @@ class _AssignmentlistState extends State<Assignmentlist> {
                       double distanceInMeters = Geolocator.distanceBetween(
                         riderLat,
                         riderLng,
-                        delivery.senderLat,
-                        delivery.senderLng,
+                        delivery.dropoffLat,
+                        delivery.dropoffLng,
                       );
 
                       // 6. จัดรูปแบบการแสดงผล
@@ -799,6 +829,9 @@ class _DeliveryUiModel {
     required this.senderaddress,
     required this.senderLat, // ‼ เพิ่ม
     required this.senderLng, // ‼ เพิ่ม
+    required this.dropoffAddress,
+    required this.dropoffLat,
+    required this.dropoffLng,
   });
 
   final String did;
@@ -811,6 +844,9 @@ class _DeliveryUiModel {
   final String? senderaddress;
   final double senderLat; // ‼ เพิ่ม
   final double senderLng; // ‼ เพิ่ม
+  final String? dropoffAddress;
+  final double dropoffLat;
+  final double dropoffLng;
 
   int get clampedStatusCode => statusCode.clamp(1, 4);
 
