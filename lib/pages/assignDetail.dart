@@ -251,6 +251,12 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
                       Text(d.itemName),
                       const SizedBox(height: 12),
 
+
+                      // รูปภาพสินค้า/พัสดุ
+                      RectImgNetwork(url: d.itemImage, height: 170, radius: 24),
+                      const SizedBox(height: 16),
+
+                      //แผนที่
                       FutureBuilder<Map<String, double?>>(
                         future: _getLocations(d.pickupAddrId),
                         builder: (context, locSnap) {
@@ -361,10 +367,7 @@ class _AssignDetailPageState extends State<AssignDetailPage> {
                           );
                         },
                       ),
-                      const SizedBox(height: 16),
 
-                      // รูปภาพสินค้า/พัสดุ
-                      RectImgNetwork(url: d.itemImage, height: 170, radius: 24),
                       const SizedBox(height: 16),
 
                       // Note

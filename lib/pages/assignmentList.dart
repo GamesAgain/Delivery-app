@@ -417,6 +417,13 @@ class _AssignmentlistState extends State<Assignmentlist> {
                                   ),
                                 ),
                                 Text(
+                                  'ผู้รับ : ${delivery.receiverName}',
+                                  style: TextStyle(
+                                    color: subtitleColor,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                Text(
                                   // ‼ แก้ไข: ใช้ note ที่กัน null แล้ว
                                   'คำอธิบาย : ${delivery.note.isEmpty ? '-' : delivery.note}',
                                   style: TextStyle(
@@ -454,12 +461,29 @@ class _AssignmentlistState extends State<Assignmentlist> {
           const SizedBox(height: 16),
           Row(
             children: [
-              const Icon(
+              Icon(
                 BootstrapIcons.geo_alt_fill,
                 color: Color(0xFF16A34A),
                 size: 12,
               ),
-              const SizedBox(width: 4), // ‼ เพิ่มช่องว่าง
+                            const SizedBox(width: 4), // ‼ เพิ่มช่องว่าง
+              Align(
+                alignment: AlignmentGeometry.bottomLeft,
+                child: Text(
+                                        // ‼ แก้ไข: ใช้ note ที่กัน null แล้ว
+                                        'จุดรับสินค้า : ',
+                                        style: TextStyle(
+                                          color: subtitleColor,
+                                          fontSize: 12,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+              ),
+            ],
+          ),
+          Row(
+            children: [
               Expanded(
                 child: Text(
                   delivery.senderaddress ?? '',
