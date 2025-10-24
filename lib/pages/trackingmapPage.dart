@@ -451,8 +451,8 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
     // Add Rider marker (always shown)
     currentMarkers.add(
       Marker(
-        width: 40.0,
-        height: 40.0, // Marker size
+        width: 48.0,
+        height: 64.0, // Marker size
         point: riderLatLng, // Marker position
         child: _buildMarkerWidget(
           icon: BootstrapIcons.bicycle,
@@ -467,8 +467,8 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
     if (statusCode < 3 && _senderAddress?.lat != null) {
       currentMarkers.add(
         Marker(
-          width: 40.0,
-          height: 40.0,
+          width: 48.0,
+          height: 64.0,
           point: LatLng(_senderAddress!.lat!, _senderAddress!.lng!),
           child: _buildMarkerWidget(
             icon: BootstrapIcons.box,
@@ -482,8 +482,8 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
     if (statusCode >= 3 && _receiverAddress?.lat != null) {
       currentMarkers.add(
         Marker(
-          width: 40.0,
-          height: 40.0,
+          width: 48.0,
+          height: 64.0,
           point: LatLng(_receiverAddress!.lat!, _receiverAddress!.lng!),
           child: _buildMarkerWidget(
             icon: BootstrapIcons.geo_alt_fill,
@@ -504,47 +504,52 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
     required IconData icon,
     required Color color,
   }) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        DecoratedBox(
-          decoration: BoxDecoration(
-            color: AppColors.bgsecondary.withOpacity(0.92),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: color.withOpacity(0.7), width: 1.6),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.35),
-                blurRadius: 10,
-                offset: const Offset(0, 6),
+    return SizedBox(
+      width: 48,
+      height: 64,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: AppColors.bgsecondary.withOpacity(0.92),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: color.withOpacity(0.7), width: 1.6),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.35),
+                  blurRadius: 10,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: Icon(
+                icon,
+                color: color,
+                size: 20,
               ),
-            ],
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Icon(
-              icon,
-              color: color,
-              size: 20,
             ),
           ),
-        ),
-        Container(
-          width: 10,
-          height: 10,
-          margin: const EdgeInsets.only(top: 4),
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: color.withOpacity(0.4),
-                blurRadius: 6,
-              ),
-            ],
+          Container(
+            width: 10,
+            height: 10,
+            margin: const EdgeInsets.only(top: 4),
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: color.withOpacity(0.4),
+                  blurRadius: 6,
+                ),
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -557,6 +562,33 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
     } catch (e) {
       print("Map not ready for move operation: $e");
     }
+  }
+
+  void _centerOnRiderMarker() {
+    if (_riderPosition == null) return;
+
+    final LatLng riderLatLng = LatLng(
+      _riderPosition!.latitude,
+      _riderPosition!.longitude,
+    );
+
+    _moveCamera(riderLatLng, _mapController.camera.zoom);
+  }
+
+  Widget _buildTrackRiderButton() {
+    final bool isEnabled = _riderPosition != null;
+
+    return Opacity(
+      opacity: isEnabled ? 1.0 : 0.5,
+      child: FloatingActionButton(
+        heroTag: 'track_rider_fab',
+        mini: true,
+        backgroundColor: AppColors.primary,
+        foregroundColor: Colors.white,
+        onPressed: isEnabled ? _centerOnRiderMarker : null,
+        child: const Icon(Icons.my_location),
+      ),
+    );
   }
 
   // --- ‼ ลบฟังก์ชัน Routing (6) ออกทั้งหมด ---
@@ -947,6 +979,14 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
                 // --- ‼ ลบ PolylineLayer ออก ---
                 MarkerLayer(markers: _markers), // Display the markers
               ],
+            ),
+
+            Positioned(
+              right: 16,
+              top: 16,
+              child: SafeArea(
+                child: _buildTrackRiderButton(),
+              ),
             ),
 
             // --- Bottom Sheet ---
