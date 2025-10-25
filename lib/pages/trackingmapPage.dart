@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:bootstrap_icons/bootstrap_icons.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:delivery_app/models/user.dart';
 import 'package:delivery_app/services/upload_img.dart';
 import 'package:delivery_app/theme/app_theme.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -35,6 +36,7 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
   String? _riderName; // Holds fetched rider name
   double _distanceToPickup = double.infinity; // Calculated distance to pickup
   double _distanceToDropoff = double.infinity; // Calculated distance to dropoff
+  Users? _riderProfile; // Holds current rider profile data
 
   // --- ‼ ลบตัวแปรเส้นนำทางออก ---
 
@@ -156,7 +158,7 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
         );
 
       // Fetch Sender, Receiver, and Rider names concurrently
-      final names = await Future.wait([
+      final names = await Future.wait<String?>([
         if (_delivery!.senderUid.isNotEmpty)
           _fetchUserName(_delivery!.senderUid)
         else
@@ -167,9 +169,14 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
           Future.value('Unknown Receiver'),
         _fetchRiderName(riderId), // Fetch current rider's name
       ]);
+
+      final riderProfile = await _fetchRiderProfile(riderId);
+      _riderProfile = riderProfile ?? _riderProfile;
+
       _senderName = names[0];
       _receiverName = names[1];
-      _riderName = names[2];
+      _riderName =
+          riderProfile?.username ?? names[2] ?? 'Rider';
 
       // Start listening for real-time Assignment updates *after* basic data is loaded
       _listenToAssignment(did, riderId);
@@ -230,6 +237,22 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
     if (!snap.exists || snap.data() == null) return 'Rider';
     // Ensure the field name 'username' matches your Firestore document
     return snap.data()?['username'] as String?;
+  }
+
+  // Fetches rider profile information from the 'riders' collection
+  Future<Users?> _fetchRiderProfile(String rid) async {
+    final snap = await FirebaseFirestore.instance
+        .collection('riders')
+        .doc(rid)
+        .get();
+
+    final data = snap.data();
+    if (!snap.exists || data == null) return null;
+
+    return Users.fromMap({
+      ...data,
+      'uid': rid,
+    });
   }
 
   // --- 2. Real-time Listeners ---
@@ -998,13 +1021,24 @@ enum _MarkerType { pickup, dropoff, rider }
 
     final riderId = FirebaseAuth.instance.currentUser?.uid;
     if (riderId != null && riderId.isNotEmpty) {
-      context.goNamed(
-        'assingmentlist',
-        queryParameters: {'uid': riderId},
-      );
-    } else {
-      context.go('/');
+      Users? riderProfile = _riderProfile;
+      riderProfile ??= await _fetchRiderProfile(riderId);
+
+      if (!mounted) return;
+
+      if (riderProfile != null) {
+        _riderProfile = riderProfile;
+        context.goNamed(
+          'index',
+          queryParameters: {'uid': riderId},
+          extra: riderProfile,
+        );
+        return;
+      }
     }
+
+    if (!mounted) return;
+    context.go('/');
   }
 
   // --- 6. Build Method (UI Structure) ---
