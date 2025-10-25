@@ -298,7 +298,7 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
     if (!permissionGranted || !mounted) return;
 
     const LocationSettings locationSettings = LocationSettings(
-      accuracy: LocationAccuracy.high, // Use high accuracy for tracking
+      accuracy: LocationAccuracy.high, 
       distanceFilter: 1, // Update only when moved at least 10 meters
     );
 
@@ -307,7 +307,7 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
           (Position position) {
             if (mounted) {
               final newPos = LatLng(position.latitude, position.longitude);
-              // Only move camera automatically on the *first* location update
+
               bool needsCameraMove = _riderPosition == null;
               setState(() {
                 _riderPosition = position;
