@@ -188,8 +188,8 @@ class _AssignmentlistState extends State<Assignmentlist> {
     final senderProfile = await _fetchUserProfile(senderUid);
     final receiverProfile = await _fetchUserProfile(receiverUid);
 
-    final pickupAddress = await fetchUserDefaultAddress(senderUid);
-        
+    final pickupAddress = await fetchAddressById(pickupAddrId);
+
     final dropoffAddress = await fetchAddressById(dropoffAddrId);
 
     return _DeliveryUiModel(
@@ -538,8 +538,7 @@ class _AssignmentlistState extends State<Assignmentlist> {
                   Color distanceColor = green;
 
                   // 2. ตรวจสอบว่ามีพิกัดผู้ส่งหรือไม่
-                  if (delivery.senderLat == 0.0 &&
-                      delivery.senderLng == 0.0) {
+                  if (delivery.senderLat == 0.0 && delivery.senderLng == 0.0) {
                     distanceText = 'No Dropoff GPS';
                     distanceColor = Colors.orange;
                   }
