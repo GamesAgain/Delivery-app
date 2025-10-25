@@ -826,6 +826,12 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
           ),
           const SizedBox(height: 6),
           _buildParticipantRow(
+            icon: BootstrapIcons.phone,
+            title: 'เบอร์โทรผู้ส่ง',
+            value: delivery.senderProfile?.phone ?? 'ไม่ระบุ',
+          ),
+          const SizedBox(height: 6),
+          _buildParticipantRow(
             icon: BootstrapIcons.person,
             title: 'ผู้รับ',
             value:
