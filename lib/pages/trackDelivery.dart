@@ -290,7 +290,7 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
       },
     );
 
-    _riderLocationListeners[deliveryId] = subscription;
+    _riderLocationListeners[deliveryId] = subscription as StreamSubscription<QuerySnapshot<Map<String, dynamic>>>;
     _deliveryRiderIds[deliveryId] = riderId;
   }
 

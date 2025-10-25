@@ -1107,8 +1107,6 @@ class _ReceiverPickerSheetState extends State<ReceiverPickerSheet> {
   bool isInitialLoading = true;
   String searchQuery = '';
   String searchType = 'phone';
-  final Map<String, String?> _defaultAddressCache = {};
-  final Map<String, Future<String?>> _defaultAddressRequests = {};
 
   @override
   void initState() {
@@ -1244,8 +1242,6 @@ class _ReceiverPickerSheetState extends State<ReceiverPickerSheet> {
   }
 
   Widget buildUserCard(Map<String, dynamic> user) {
-    final uidValue = user['uid'];
-    final String? safeUid = uidValue is String ? uidValue : null;
     return GestureDetector(
       onTap: () async {
         final currentUid = FirebaseAuth.instance.currentUser?.uid;
@@ -1292,32 +1288,10 @@ class _ReceiverPickerSheetState extends State<ReceiverPickerSheet> {
                   const SizedBox(height: 4),
                   _buildInfoRow('เบอร์โทรศัพท์', user['phone'] ?? 'N/A'),
                   const SizedBox(height: 4),
-                  if (safeUid != null && safeUid.isNotEmpty)
-                    FutureBuilder<String?>(
-                      future: _loadDefaultAddress(safeUid),
-                      builder: (context, snapshot) {
-                        final cachedAddress = _defaultAddressCache[safeUid];
-                        if (snapshot.connectionState == ConnectionState.waiting) {
-                          if (cachedAddress != null && cachedAddress.trim().isNotEmpty) {
-                            return _buildInfoRow('ตำแหน่งที่รับ', cachedAddress);
-                          }
-                          return _buildInfoRow('ตำแหน่งที่รับ', 'กำลังโหลดที่อยู่...');
-                        }
-                        if (snapshot.hasError) {
-                          return _buildInfoRow('ตำแหน่งที่รับ', 'ไม่สามารถโหลดข้อมูลที่อยู่');
-                        }
-                        final address = snapshot.data ?? cachedAddress;
-                        if (address != null) {
-                          final trimmed = address.trim();
-                          if (trimmed.isNotEmpty) {
-                            return _buildInfoRow('ตำแหน่งที่รับ', trimmed);
-                          }
-                        }
-                        return _buildInfoRow('ตำแหน่งที่รับ', 'ไม่พบข้อมูลที่อยู่');
-                      },
-                    )
-                  else
-                    _buildInfoRow('ตำแหน่งที่รับ', 'ไม่พบข้อมูลที่อยู่'),
+                  _buildInfoRow(
+                    'ตำแหน่งที่รับ',
+                    'เชียงยืน, นาทอง, มหาสารคาม 44160',
+                  ),
                 ],
               ),
             ),
@@ -1344,66 +1318,6 @@ class _ReceiverPickerSheetState extends State<ReceiverPickerSheet> {
         ],
       ),
     );
-  }
-
-  Future<String?> _loadDefaultAddress(String uid) {
-    if (_defaultAddressCache.containsKey(uid)) {
-      return Future.value(_defaultAddressCache[uid]);
-    }
-
-    final existingRequest = _defaultAddressRequests[uid];
-    if (existingRequest != null) {
-      return existingRequest;
-    }
-
-    final future = _fetchDefaultAddressFromFirestore(uid).then((address) {
-      if (mounted) {
-        _defaultAddressCache[uid] = address;
-      }
-      return address;
-    });
-
-    final trackedFuture = future.whenComplete(() {
-      _defaultAddressRequests.remove(uid);
-    });
-
-    _defaultAddressRequests[uid] = trackedFuture;
-    return trackedFuture;
-  }
-
-  Future<String?> _fetchDefaultAddressFromFirestore(String uid) async {
-    try {
-      final querySnapshot = await FirebaseFirestore.instance
-          .collection('addresses')
-          .where('uid', isEqualTo: uid)
-          .get();
-
-      String? defaultAddress;
-
-      for (final doc in querySnapshot.docs) {
-        final data = doc.data();
-        final fullAddress = data['fullAddress'];
-        if (fullAddress is! String) {
-          continue;
-        }
-        final trimmed = fullAddress.trim();
-        if (trimmed.isEmpty) {
-          continue;
-        }
-
-        final isDefault = (data['is_default'] as num?)?.toInt() == 0;
-        if (isDefault) {
-          defaultAddress = trimmed;
-          break;
-        }
-
-        defaultAddress ??= trimmed;
-      }
-
-      return defaultAddress;
-    } catch (_) {
-      return null;
-    }
   }
 
   @override
