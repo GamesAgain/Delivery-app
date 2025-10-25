@@ -5,12 +5,14 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:delivery_app/components/custom_TextField.dart';
 import 'package:delivery_app/components/custom_dialog.dart';
 import 'package:delivery_app/services/upload_img.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart' as fm;
 import 'package:flutter_svg/svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:latlong2/latlong.dart' as ll;
 
 class AddDeliveryPage extends StatefulWidget {
   const AddDeliveryPage({super.key});
@@ -27,11 +29,16 @@ class _AddDeliveryPageState extends State<AddDeliveryPage> {
   Map<String, dynamic>? _selectedReceiver;
   String? _pickupAddressId;
   String? _dropoffAddressId;
+  List<Map<String, dynamic>> _pickupAddresses = const [];
+  List<Map<String, dynamic>> _dropoffAddresses = const [];
   bool _isLoadingAddresses = false;
   File? deliveryImage;
   bool _submitting = false;
   static const int _initialStatusCode = 1;
   static const String _initialStatusLabel = "รอไรเดอร์มารับสินค้า";
+  final fm.MapController _mapController = fm.MapController();
+  ll.LatLng? _receiverLatLng;
+  static const ll.LatLng _initialMapCenter = ll.LatLng(13.736717, 100.523186);
 
   @override
   Widget build(BuildContext context) {
@@ -260,6 +267,13 @@ class _AddDeliveryPageState extends State<AddDeliveryPage> {
                       ),
                     ),
 
+                    if (_selectedReceiver != null) ...[
+                      const SizedBox(height: 12),
+                      _buildAddressSelectionSection(),
+                      const SizedBox(height: 16),
+                      _buildReceiverMapSection(),
+                    ],
+
                     // ใส่คำอธิบาย
                     buildTextField(
                       controller: noteCtrl,
@@ -439,20 +453,36 @@ class _AddDeliveryPageState extends State<AddDeliveryPage> {
       _pickupAddressId = null;
       _dropoffAddressId = null;
       _isLoadingAddresses = true;
+      _pickupAddresses = const [];
+      _dropoffAddresses = const [];
+      _receiverLatLng = null;
     });
 
     try {
-      final pickupId = await _fetchDefaultAddressId(sender.uid);
-      final dropoffId = await _fetchDefaultAddressId(receiverUid);
+      final pickupAddresses = await _fetchAddressesForUser(sender.uid);
+      final dropoffAddresses = await _fetchAddressesForUser(receiverUid);
+
+      final pickupId = _resolveDefaultAddressId(pickupAddresses);
+      final dropoffId = _resolveDefaultAddressId(dropoffAddresses);
+      final pickupAddress =
+          _findAddressById(pickupAddresses, pickupId) ?? (pickupAddresses.isEmpty ? null : pickupAddresses.first);
+      final dropoffAddress =
+          _findAddressById(dropoffAddresses, dropoffId) ?? (dropoffAddresses.isEmpty ? null : dropoffAddresses.first);
+      final receiverLocation = _toLatLng(dropoffAddress);
 
       if (!mounted) return;
 
       setState(() {
-        _pickupAddressId = pickupId;
-        _dropoffAddressId = dropoffId;
+        _pickupAddresses = pickupAddresses;
+        _dropoffAddresses = dropoffAddresses;
+        _pickupAddressId = pickupAddress?['addr_id'] as String?;
+        _dropoffAddressId = dropoffAddress?['addr_id'] as String?;
+        _receiverLatLng = receiverLocation;
       });
 
-      if (pickupId == null) {
+      _moveMapTo(receiverLocation);
+
+      if (pickupAddresses.isEmpty) {
         await showWarningSnackBar(
           context,
           title: "ข้อมูลไม่ครบ",
@@ -460,7 +490,7 @@ class _AddDeliveryPageState extends State<AddDeliveryPage> {
         );
       }
 
-      if (dropoffId == null) {
+      if (dropoffAddresses.isEmpty) {
         await showWarningSnackBar(
           context,
           title: "ข้อมูลไม่ครบ",
@@ -481,27 +511,6 @@ class _AddDeliveryPageState extends State<AddDeliveryPage> {
         });
       }
     }
-  }
-
-  Future<String?> _fetchDefaultAddressId(String uid) async {
-    final querySnapshot = await FirebaseFirestore.instance
-        .collection('addresses')
-        .where('uid', isEqualTo: uid)
-        .where('is_default', isEqualTo: 0)
-        .limit(1)
-        .get();
-
-    if (querySnapshot.docs.isEmpty) {
-      return null;
-    }
-
-    final doc = querySnapshot.docs.first;
-    final data = doc.data();
-    final addrId = data['addr_id'];
-    if (addrId is String && addrId.isNotEmpty) {
-      return addrId;
-    }
-    return doc.id;
   }
 
   Future<File?> _selectInitialStatusImage() async {
@@ -658,6 +667,306 @@ class _AddDeliveryPageState extends State<AddDeliveryPage> {
         });
       }
     }
+  }
+
+  Widget _buildAddressSelectionSection() {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: const Color(0xFF111827),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildAddressDropdown(
+              label: "เลือกที่อยู่รับสินค้า",
+              addresses: _pickupAddresses,
+              selectedId: _pickupAddressId,
+              emptyMessage:
+                  "ไม่พบที่อยู่ของคุณ กรุณาเพิ่มที่อยู่ในโปรไฟล์ก่อน",
+              onChanged: _pickupAddresses.isEmpty
+                  ? null
+                  : (value) {
+                      if (value == null) return;
+                      setState(() {
+                        _pickupAddressId = value;
+                      });
+                    },
+            ),
+            const SizedBox(height: 16),
+            _buildAddressDropdown(
+              label: "เลือกที่อยู่ผู้รับ",
+              addresses: _dropoffAddresses,
+              selectedId: _dropoffAddressId,
+              emptyMessage:
+                  "ไม่พบที่อยู่ผู้รับ กรุณาให้ผู้รับเพิ่มที่อยู่ก่อน",
+              onChanged: _dropoffAddresses.isEmpty
+                  ? null
+                  : (value) {
+                      if (value == null) return;
+                      final address =
+                          _findAddressById(_dropoffAddresses, value);
+                      final latLng = _toLatLng(address);
+                      setState(() {
+                        _dropoffAddressId = value;
+                        _receiverLatLng = latLng;
+                      });
+                      _moveMapTo(latLng);
+                    },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAddressDropdown({
+    required String label,
+    required List<Map<String, dynamic>> addresses,
+    required String? selectedId,
+    required String emptyMessage,
+    required ValueChanged<String?>? onChanged,
+  }) {
+    final hasAddresses = addresses.isNotEmpty;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: Color(0xFFBBB9B9),
+            fontSize: 13,
+          ),
+        ),
+        const SizedBox(height: 6),
+        if (!hasAddresses)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.04),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.white10),
+            ),
+            child: Text(
+              emptyMessage,
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+          )
+        else
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: selectedId,
+                isExpanded: true,
+                hint: const Text(
+                  "เลือกที่อยู่",
+                  style: TextStyle(color: Color(0xFF848484), fontSize: 12),
+                ),
+                items: addresses.map((address) {
+                  final addrId = address['addr_id'] as String? ?? '';
+                  final label = address['label'] as String? ?? 'ที่อยู่ไม่ระบุ';
+                  final detail = address['fullAddress'] as String? ?? '';
+                  return DropdownMenuItem<String>(
+                    value: addrId,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          label,
+                          style: const TextStyle(
+                            color: Colors.black,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
+                        ),
+                        if (detail.isNotEmpty)
+                          Text(
+                            detail,
+                            style: const TextStyle(
+                              color: Color(0xFF4B5563),
+                              fontSize: 11,
+                            ),
+                          ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+                onChanged: onChanged,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildReceiverMapSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          "ตำแหน่งผู้รับบนแผนที่",
+          style: TextStyle(
+            color: Color(0xFFBBB9B9),
+            fontSize: 13,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFF111827),
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: const [
+              BoxShadow(
+                color: Colors.black38,
+                blurRadius: 10,
+                offset: Offset(0, 6),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: SizedBox(
+              height: 220,
+              child: Stack(
+                children: [
+                  fm.FlutterMap(
+                    mapController: _mapController,
+                    options: fm.MapOptions(
+                      initialCenter: _receiverLatLng ?? _initialMapCenter,
+                      initialZoom: 13,
+                    ),
+                    children: [
+                      fm.TileLayer(
+                        urlTemplate:
+                            'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                        userAgentPackageName: 'com.delivery.app',
+                      ),
+                      fm.MarkerLayer(
+                        markers: [
+                          if (_receiverLatLng != null)
+                            fm.Marker(
+                              width: 40,
+                              height: 40,
+                              point: _receiverLatLng!,
+                              child: const Icon(
+                                Icons.location_pin,
+                                size: 36,
+                                color: Color(0xFFEF4444),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  if (_receiverLatLng == null)
+                    Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.65),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          _dropoffAddresses.isEmpty
+                              ? "ยังไม่มีข้อมูลที่อยู่ของผู้รับ"
+                              : "เลือกที่อยู่ผู้รับเพื่อแสดงตำแหน่ง",
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchAddressesForUser(String uid) async {
+    final querySnapshot = await FirebaseFirestore.instance
+        .collection('addresses')
+        .where('uid', isEqualTo: uid)
+        .get();
+
+    return querySnapshot.docs.map((doc) {
+      final data = doc.data();
+      final addrId = data['addr_id'];
+      return {
+        ...data,
+        'addr_id': addrId is String && addrId.isNotEmpty ? addrId : doc.id,
+      };
+    }).toList();
+  }
+
+  String? _resolveDefaultAddressId(List<Map<String, dynamic>> addresses) {
+    for (final address in addresses) {
+      final isDefault = (address['is_default'] as num?)?.toInt() == 0;
+      if (isDefault) {
+        final addrId = address['addr_id'];
+        if (addrId is String && addrId.isNotEmpty) {
+          return addrId;
+        }
+      }
+    }
+    if (addresses.isEmpty) {
+      return null;
+    }
+    final fallback = addresses.first['addr_id'];
+    if (fallback is String && fallback.isNotEmpty) {
+      return fallback;
+    }
+    return null;
+  }
+
+  Map<String, dynamic>? _findAddressById(
+      List<Map<String, dynamic>> addresses, String? addrId) {
+    if (addrId == null) return null;
+    for (final address in addresses) {
+      final currentId = address['addr_id'];
+      if (currentId is String && currentId == addrId) {
+        return address;
+      }
+    }
+    return null;
+  }
+
+  ll.LatLng? _toLatLng(Map<String, dynamic>? address) {
+    if (address == null) return null;
+    final lat = (address['lat'] as num?)?.toDouble();
+    final lng = (address['lng'] as num?)?.toDouble();
+    if (lat == null || lng == null) {
+      return null;
+    }
+    return ll.LatLng(lat, lng);
+  }
+
+  void _moveMapTo(ll.LatLng? target) {
+    if (target == null) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _mapController.move(target, 15);
+    });
   }
 }
 
