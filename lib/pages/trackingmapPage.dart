@@ -21,6 +21,7 @@ class TrackingMapPage extends StatefulWidget {
 }
 
 class _TrackingMapPageState extends State<TrackingMapPage> {
+  static const Color _focusButtonColor = AppColors.primary;
   bool _isLoading = true; // Tracks initial data loading
   bool _isUploading = false; // Tracks image upload process
   String? _errorMessage; // Stores any error messages for display
@@ -170,6 +171,10 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
       _receiverName = names[1];
       _riderName = names[2];
 
+      if (mounted) {
+        _updateMapMarkers();
+      }
+
       // Start listening for real-time Assignment updates *after* basic data is loaded
       _listenToAssignment(did, riderId);
 
@@ -259,9 +264,6 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
               // ‼ ลบการเรียก update route ออก
 
               // If the assignment status indicates completion, navigate away
-              if ((_assignment?.statusCode ?? 0) >= 4) {
-                _handleCompletionNavigation();
-              }
             } else {
               // Assignment document not found or deleted
               // If initial loading is done, show an error. Otherwise, just wait.
@@ -439,70 +441,89 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
   // --- 4. Map Logic ---
   // Updates the list of markers displayed on the map based on current state
   void _updateMapMarkers() {
-    if (!mounted || _riderPosition == null)
-      return; // Need rider position and widget mounted
+    if (!mounted) return;
 
-    final List<Marker> currentMarkers = []; // Start with an empty list
-    final riderLatLng = LatLng(
-      _riderPosition!.latitude,
-      _riderPosition!.longitude,
-    );
+    final List<Marker> currentMarkers = [];
+    final LatLng? riderLatLng = _riderPosition != null
+        ? LatLng(_riderPosition!.latitude, _riderPosition!.longitude)
+        : null;
+    final LatLng? pickupLatLng = (_senderAddress?.lat != null &&
+            _senderAddress?.lng != null)
+        ? LatLng(_senderAddress!.lat!, _senderAddress!.lng!)
+        : null;
+    final LatLng? dropoffLatLng = (_receiverAddress?.lat != null &&
+            _receiverAddress?.lng != null)
+        ? LatLng(_receiverAddress!.lat!, _receiverAddress!.lng!)
+        : null;
 
-    // Add Rider marker (always shown)
-    currentMarkers.add(
-      Marker(
-        width: 40.0,
-        height: 40.0, // Marker size
-        point: riderLatLng, // Marker position
-        child: _buildMarkerWidget(
+    if (pickupLatLng != null) {
+      currentMarkers.add(
+        _createMapMarker(
+          position: pickupLatLng,
+          icon: BootstrapIcons.box_seam,
+          color: const Color(0xFF38BDF8),
+          label: 'จุดรับ',
+        ),
+      );
+    }
+
+    if (dropoffLatLng != null) {
+      currentMarkers.add(
+        _createMapMarker(
+          position: dropoffLatLng,
+          icon: BootstrapIcons.pin_map_fill,
+          color: const Color(0xFFF87171),
+          label: 'ปลายทาง',
+        ),
+      );
+    }
+
+    if (riderLatLng != null) {
+      currentMarkers.add(
+        _createMapMarker(
+          position: riderLatLng,
           icon: BootstrapIcons.bicycle,
           color: AppColors.primary,
-        ), // Custom widget for marker
-      ),
-    );
-
-    final int statusCode = _assignment?.statusCode ?? 0; // Get current assignment status
-
-    // แสดงหมุดผู้ส่ง (Sender) เฉพาะก่อนรับของ (status < 3)
-    if (statusCode < 3 && _senderAddress?.lat != null) {
-      currentMarkers.add(
-        Marker(
-          width: 40.0,
-          height: 40.0,
-          point: LatLng(_senderAddress!.lat!, _senderAddress!.lng!),
-          child: _buildMarkerWidget(
-            icon: BootstrapIcons.box,
-            color: const Color(0xFF38BDF8),
-          ),
+          label: 'ไรเดอร์',
+          emphasize: true,
         ),
       );
     }
 
-    // แสดงหมุดผู้รับ (Receiver) หลังจากรับของแล้ว (status >= 3)
-    if (statusCode >= 3 && _receiverAddress?.lat != null) {
-      currentMarkers.add(
-        Marker(
-          width: 40.0,
-          height: 40.0,
-          point: LatLng(_receiverAddress!.lat!, _receiverAddress!.lng!),
-          child: _buildMarkerWidget(
-            icon: BootstrapIcons.geo_alt_fill,
-            color: const Color(0xFFF87171),
-          ),
-        ),
-      );
-    }
-
-    // Update the state to rebuild the map with the new markers
     setState(() {
       _markers = currentMarkers;
     });
+  }
+
+  Marker _createMapMarker({
+    required LatLng position,
+    required IconData icon,
+    required Color color,
+    required String label,
+    bool emphasize = false,
+  }) {
+    return Marker(
+      width: 120,
+      height: 110,
+      point: position,
+      child: GestureDetector(
+        onTap: () => _onFocusRequest(positionOverride: position),
+        child: _buildMarkerWidget(
+          icon: icon,
+          color: color,
+          label: label,
+          emphasize: emphasize,
+        ),
+      ),
+    );
   }
 
   // Builds the widget used for map markers (Image or fallback Icon)
   Widget _buildMarkerWidget({
     required IconData icon,
     required Color color,
+    required String label,
+    bool emphasize = false,
   }) {
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -510,41 +531,228 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
         DecoratedBox(
           decoration: BoxDecoration(
             color: AppColors.bgsecondary.withOpacity(0.92),
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(18),
             border: Border.all(color: color.withOpacity(0.7), width: 1.6),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withOpacity(0.35),
-                blurRadius: 10,
+                blurRadius: 12,
                 offset: const Offset(0, 6),
               ),
             ],
           ),
           child: Padding(
-            padding: const EdgeInsets.all(8.0),
+            padding: const EdgeInsets.all(10.0),
             child: Icon(
               icon,
               color: color,
-              size: 20,
+              size: emphasize ? 38 : 30,
             ),
           ),
         ),
-        Container(
-          width: 10,
-          height: 10,
-          margin: const EdgeInsets.only(top: 4),
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: color.withOpacity(0.4),
-                blurRadius: 6,
+        if (label.isNotEmpty)
+          Container(
+            margin: const EdgeInsets.only(top: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.65),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
               ),
-            ],
+            ),
           ),
-        ),
       ],
+    );
+  }
+
+  void _onFocusRequest({
+    LatLng? positionOverride,
+    double zoom = 16.0,
+  }) {
+    LatLng? target = positionOverride;
+
+    target ??= _riderPosition != null
+        ? LatLng(_riderPosition!.latitude, _riderPosition!.longitude)
+        : null;
+    target ??=
+        (_receiverAddress?.lat != null && _receiverAddress?.lng != null)
+            ? LatLng(_receiverAddress!.lat!, _receiverAddress!.lng!)
+            : null;
+    target ??=
+        (_senderAddress?.lat != null && _senderAddress?.lng != null)
+            ? LatLng(_senderAddress!.lat!, _senderAddress!.lng!)
+            : null;
+
+    if (target == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('ยังไม่มีตำแหน่งให้แสดงบนแผนที่'),
+        ),
+      );
+      return;
+    }
+
+    _moveCamera(target, zoom);
+  }
+
+  Widget _buildMapSection(LatLng initialCenter, double initialZoom) {
+    final bool hasMarkers = _markers.isNotEmpty;
+    final bool hasLocationData = hasMarkers ||
+        _riderPosition != null ||
+        (_senderAddress?.lat != null && _senderAddress?.lng != null) ||
+        (_receiverAddress?.lat != null && _receiverAddress?.lng != null);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.bgsecondary,
+        borderRadius: BorderRadius.circular(30),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black45,
+            blurRadius: 24,
+            offset: Offset(0, 12),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(30),
+        child: Stack(
+          children: [
+            FlutterMap(
+              mapController: _mapController,
+              options: MapOptions(
+                initialCenter: initialCenter,
+                initialZoom: initialZoom,
+                minZoom: 10.0,
+                maxZoom: 18.0,
+                onMapReady: () {
+                  if (mounted) {
+                    _updateMapMarkers();
+                  }
+                },
+                interactionOptions: const InteractionOptions(
+                  flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag,
+                ),
+              ),
+              children: [
+                TileLayer(
+                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  userAgentPackageName: 'com.delivery.app',
+                ),
+                MarkerLayer(markers: _markers),
+              ],
+            ),
+            if (!hasLocationData)
+              _buildMapMessage(
+                _isLoading
+                    ? 'กำลังโหลดข้อมูลตำแหน่ง...'
+                    : 'ยังไม่มีตำแหน่งที่จะแสดง',
+                'ระบบจะแสดงหมุดจุดรับ, ไรเดอร์ และปลายทางเมื่อข้อมูลพร้อม',
+              ),
+            if (_errorMessage != null)
+              Positioned(
+                left: 16,
+                right: 16,
+                bottom: 16,
+                child: _buildErrorBanner(_errorMessage!),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMapMessage(String title, String subtitle) {
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.65),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              subtitle,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 12,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorBanner(String message) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0x99EF4444),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black45,
+            blurRadius: 12,
+            offset: Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          const Icon(BootstrapIcons.exclamation_triangle_fill,
+              color: Colors.white),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFocusButton(LatLng position, {String? tooltip}) {
+    final button = TextButton.icon(
+      onPressed: () => _onFocusRequest(positionOverride: position),
+      style: TextButton.styleFrom(
+        foregroundColor: _focusButtonColor,
+      ),
+      icon: const Icon(BootstrapIcons.geo_fill, size: 16),
+      label: const Text('ดูตำแหน่ง'),
+    );
+
+    if (tooltip == null || tooltip.isEmpty) {
+      return button;
+    }
+
+    return Tooltip(
+      message: tooltip,
+      child: button,
     );
   }
 
@@ -772,7 +980,14 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
           );
         }
       } else {
-        await _handleCompletionNavigation();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Delivery Completed!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
       }
     } catch (e) {
       // Handle errors during the process
@@ -794,29 +1009,22 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
     }
   }
 
-  // Navigates back to the assignment list upon successful delivery completion
-  Future<void> _handleCompletionNavigation() async {
-    if (!mounted) return;
+  void _handleBackNavigation() {
+    final isCompleted = (_assignment?.statusCode ?? 0) >= 4;
+    if (!isCompleted) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('โปรดดำเนินการจัดส่งให้เสร็จสิ้นก่อน'),
+        ),
+      );
+      return;
+    }
 
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('จัดส่งเสร็จสิ้น'),
-          content: const Text('ไรเดอร์นำส่งสินค้าแล้ว'),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-              },
-              child: const Text('ตกลง'),
-            ),
-          ],
-        );
-      },
-    );
+    _navigateToAssignmentList();
+  }
 
+  void _navigateToAssignmentList() {
     if (!mounted) return;
 
     final riderId = FirebaseAuth.instance.currentUser?.uid;
@@ -835,21 +1043,33 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
   @override
   Widget build(BuildContext context) {
     // Determine if the back button should be allowed (only after completion)
-    bool canPop = (_assignment?.statusCode ?? 0) >= 4;
+    final bool isCompleted = (_assignment?.statusCode ?? 0) >= 4;
 
     // Calculate initial map center coordinates
     LatLng initialCenter = LatLng(
       16.47,
       103.25,
     ); // Default fallback (e.g., city center)
-    if (_riderPosition != null) {
+    final LatLng? riderMarkerPosition = _riderPosition != null
+        ? LatLng(_riderPosition!.latitude, _riderPosition!.longitude)
+        : null;
+    final LatLng? pickupPosition = (_senderAddress?.lat != null &&
+            _senderAddress?.lng != null)
+        ? LatLng(_senderAddress!.lat!, _senderAddress!.lng!)
+        : null;
+    final LatLng? dropoffPosition = (_receiverAddress?.lat != null &&
+            _receiverAddress?.lng != null)
+        ? LatLng(_receiverAddress!.lat!, _receiverAddress!.lng!)
+        : null;
+
+    if (riderMarkerPosition != null) {
       initialCenter = LatLng(
-        _riderPosition!.latitude,
-        _riderPosition!.longitude,
+        riderMarkerPosition.latitude,
+        riderMarkerPosition.longitude,
       );
-    } else if (_senderAddress?.lat != null) {
+    } else if (pickupPosition != null) {
       // If no rider pos, center on sender
-      initialCenter = LatLng(_senderAddress!.lat!, _senderAddress!.lng!);
+      initialCenter = pickupPosition;
     }
     double initialZoom = 15.0; // Initial map zoom level
 
@@ -892,19 +1112,14 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
 
     // Main scaffold structure
     return PopScope(
-      canPop: canPop, // Control back navigation based on completion status
+      canPop: false,
       onPopInvoked: (didPop) {
-        // Show message if back navigation is attempted before completion
-        if (!didPop && !canPop) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Please complete the delivery first.'),
-            ),
-          );
-        }
+        if (didPop) return;
+        _handleBackNavigation();
       },
       child: Scaffold(
         appBar: AppBar(
+          automaticallyImplyLeading: false,
           title: const Text(
             'Delivery Tracking',
             style: TextStyle(color: Colors.white),
@@ -914,41 +1129,22 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
             color: Colors.white,
           ), // Make back button white
           elevation: 0, // No shadow
+          leading: IconButton(
+            onPressed: _handleBackNavigation,
+            icon: const Icon(Icons.arrow_back_ios_new_rounded),
+            tooltip: 'กลับไปยังรายการงาน',
+          ),
         ),
         backgroundColor:
             AppColors.bgsecondary, // Set a default background for the body
         body: Stack(
           children: [
-            // --- FlutterMap ---
-            FlutterMap(
-              mapController: _mapController,
-              options: MapOptions(
-                initialCenter: initialCenter,
-                initialZoom: initialZoom,
-                minZoom: 10.0,
-                maxZoom: 18.0, // Set zoom limits
-                onMapReady: () {
-                  // Update markers once map is ready
-                  if (mounted) _updateMapMarkers();
-                },
-                interactionOptions: const InteractionOptions(
-                  flags:
-                      InteractiveFlag.pinchZoom |
-                      InteractiveFlag.drag, // Allow drag and zoom
-                ),
+            Positioned.fill(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                child: _buildMapSection(initialCenter, initialZoom),
               ),
-              children: [
-                TileLayer(
-                  urlTemplate:
-                      'https://tile.thunderforest.com/transport/{z}/{x}/{y}@2x.png?apikey=fa73e7cfa2dc480da8d4a68fef53f9e1',
-                  userAgentPackageName: 'com.example.delivery_app',
-                ),
-
-                // --- ‼ ลบ PolylineLayer ออก ---
-                MarkerLayer(markers: _markers), // Display the markers
-              ],
             ),
-
             // --- Bottom Sheet ---
             DraggableScrollableSheet(
               initialChildSize: 0.38,
@@ -996,6 +1192,7 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
                             _senderAddress?.fullAddress ??
                                 (_isLoading ? 'Loading...' : 'N/A'),
                             Icons.arrow_upward,
+                            focusPosition: pickupPosition,
                           ),
                           const SizedBox(height: 12),
                           _buildAddressRow(
@@ -1003,6 +1200,7 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
                             _receiverAddress?.fullAddress ??
                                 (_isLoading ? 'Loading...' : 'N/A'),
                             Icons.arrow_downward,
+                            focusPosition: dropoffPosition,
                           ),
                           const SizedBox(height: 20),
                           if (_isLoading)
@@ -1040,10 +1238,11 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
                                               ? _senderAddress?.fullAddress
                                               : _receiverAddress?.fullAddress) ??
                                           "Loading address...",
+                                  riderPosition: riderMarkerPosition,
                                 ),
                                 const SizedBox(height: 24),
                                 if (actionButton != null) actionButton,
-                                if ((_assignment?.statusCode ?? 0) >= 4)
+                                if (isCompleted)
                                   Padding(
                                     padding: const EdgeInsets.only(top: 24.0),
                                     child: Row(
@@ -1092,7 +1291,12 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
   // (เดิมคือ 9)
 
   // Builds a row to display address information
-  Widget _buildAddressRow(String label, String address, IconData icon) {
+  Widget _buildAddressRow(
+    String label,
+    String address,
+    IconData icon, {
+    LatLng? focusPosition,
+  }) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1149,6 +1353,13 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
               ],
             ),
           ),
+          if (focusPosition != null) ...[
+            const SizedBox(width: 12),
+            _buildFocusButton(
+              focusPosition,
+              tooltip: 'ดูตำแหน่งของ $label',
+            ),
+          ],
         ],
       ),
     );
@@ -1159,6 +1370,7 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
     required String riderName,
     required String statusText,
     required String address,
+    LatLng? riderPosition,
   }) {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -1249,6 +1461,13 @@ class _TrackingMapPageState extends State<TrackingMapPage> {
                     ),
                   ],
                 ),
+                if (riderPosition != null) ...[
+                  const SizedBox(height: 12),
+                  _buildFocusButton(
+                    riderPosition,
+                    tooltip: 'ดูตำแหน่งของไรเดอร์',
+                  ),
+                ],
               ],
             ),
           ),
