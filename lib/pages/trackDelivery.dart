@@ -249,25 +249,35 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
   }
 
   void _listenToRiderLocation(String deliveryId, String riderId) {
-    final query = FirebaseFirestore.instance
+    final docRef = FirebaseFirestore.instance
         .collection('RiderLocation')
-        .where('rid', isEqualTo: riderId)
-        .limit(1);
+        .doc(deliveryId);
 
-    final subscription = query.snapshots().listen(
+    final subscription = docRef.snapshots().listen(
       (snapshot) {
         if (_locationStreamController.isClosed) {
           return;
         }
+
         ll.LatLng? latLng;
-        if (snapshot.docs.isNotEmpty) {
-          latLng = _latLngFromDynamic(snapshot.docs.first.data());
+        if (snapshot.exists) {
+          final data = snapshot.data();
+          if (data != null) {
+            final docRid = data['rid'] as String?;
+            if (docRid == null || docRid == riderId) {
+              latLng = _latLngFromDynamic(data);
+            } else {
+              latLng = null;
+            }
+          }
         }
+
         if (latLng != null) {
           _currentRiderLocations[deliveryId] = latLng;
         } else {
           _currentRiderLocations.remove(deliveryId);
         }
+
         _locationStreamController.add(
           Map<String, ll.LatLng?>.from(_currentRiderLocations),
         );
