@@ -43,9 +43,8 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
   late final Stream<List<_TrackedDelivery>> _deliveriesStream;
   final _locationStreamController =
       StreamController<Map<String, ll.LatLng?>>.broadcast();
-  final Map<String,
-          StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>
-      _riderLocationListeners = {};
+  final Map<String, StreamSubscription<QuerySnapshot<Map<String, dynamic>>>>
+  _riderLocationListeners = {};
   final Map<String, String> _deliveryRiderIds = {};
   final Map<String, ll.LatLng?> _currentRiderLocations = {};
   StreamSubscription<List<_TrackedDelivery>>? _firestoreSubscription;
@@ -141,8 +140,10 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
                 builder: (context, locationSnapshot) {
                   final realtimePositions =
                       locationSnapshot.data ?? const <String, ll.LatLng?>{};
-                  final finalPositions =
-                      _mergePositions(deliveries, realtimePositions);
+                  final finalPositions = _mergePositions(
+                    deliveries,
+                    realtimePositions,
+                  );
 
                   WidgetsBinding.instance.addPostFrameCallback((_) {
                     if (!mounted) return;
@@ -174,7 +175,8 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
                         child: _buildMap(
                           deliveries,
                           finalPositions,
-                          isLoading: locationSnapshot.connectionState ==
+                          isLoading:
+                              locationSnapshot.connectionState ==
                               ConnectionState.waiting,
                           error: locationSnapshot.hasError
                               ? 'เกิดข้อผิดพลาดในการเชื่อมต่อข้อมูลตำแหน่ง'
@@ -241,8 +243,9 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
     if (_locationStreamController.isClosed) {
       return;
     }
-    _locationStreamController
-        .add(Map<String, ll.LatLng?>.from(_currentRiderLocations));
+    _locationStreamController.add(
+      Map<String, ll.LatLng?>.from(_currentRiderLocations),
+    );
   }
 
   void _listenToRiderLocation(String deliveryId, String riderId) {
@@ -265,8 +268,9 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
         } else {
           _currentRiderLocations.remove(deliveryId);
         }
-        _locationStreamController
-            .add(Map<String, ll.LatLng?>.from(_currentRiderLocations));
+        _locationStreamController.add(
+          Map<String, ll.LatLng?>.from(_currentRiderLocations),
+        );
       },
       onError: (error, stackTrace) {
         if (_locationStreamController.isClosed) {
@@ -327,8 +331,9 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
     return query.snapshots().asyncMap((snapshot) async {
       final futures = snapshot.docs.map(_buildTrackedDelivery).toList();
       final results = await Future.wait(futures);
-      final filtered =
-          results.whereType<_TrackedDelivery>().toList(growable: false);
+      final filtered = results.whereType<_TrackedDelivery>().toList(
+        growable: false,
+      );
       filtered.sort(
         (a, b) => (b.updatedAt ?? DateTime.fromMillisecondsSinceEpoch(0))
             .compareTo(a.updatedAt ?? DateTime.fromMillisecondsSinceEpoch(0)),
@@ -363,20 +368,26 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
     final assignment = await _fetchAssignment(did);
     final riderId = assignment?.rid ?? data['rid'] as String?;
 
-    final pickupAddress =
-        await _fetchAddressDetails(data['pickup_addr_id'] as String?);
-    final dropoffAddress =
-        await _fetchAddressDetails(data['dropoff_addr_id'] as String?);
+    final pickupAddress = await _fetchAddressDetails(
+      data['pickup_addr_id'] as String?,
+    );
+    final dropoffAddress = await _fetchAddressDetails(
+      data['dropoff_addr_id'] as String?,
+    );
 
     final riderProfile = await _fetchRiderProfile(riderId);
-    final senderProfile =
-        await _fetchUserProfile(data['sender_uid'] as String?);
-    final receiverProfile =
-        await _fetchUserProfile(data['receiver_uid'] as String?);
+    final senderProfile = await _fetchUserProfile(
+      data['sender_uid'] as String?,
+    );
+    final receiverProfile = await _fetchUserProfile(
+      data['receiver_uid'] as String?,
+    );
 
-    final updatedAt = (data['updated_at'] as Timestamp?)?.toDate() ??
+    final updatedAt =
+        (data['updated_at'] as Timestamp?)?.toDate() ??
         (data['created_at'] as Timestamp?)?.toDate();
-    final riderFallback = _latLngFromDynamic(data['rider_location']) ??
+    final riderFallback =
+        _latLngFromDynamic(data['rider_location']) ??
         _latLngFromDynamic(data['current_location']);
 
     return _TrackedDelivery(
@@ -387,7 +398,8 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
           ? statusText
           : _statusLabels[statusCode] ?? 'สถานะไม่ทราบ',
       updatedAt: updatedAt,
-      riderProfile: riderProfile ??
+      riderProfile:
+          riderProfile ??
           (riderId != null && riderId.isNotEmpty
               ? _RiderProfile(uid: riderId, username: 'ไรเดอร์')
               : null),
@@ -429,10 +441,7 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
             Expanded(
               child: Text(
                 subtitle,
-                style: GoogleFonts.poppins(
-                  color: Colors.white60,
-                  fontSize: 13,
-                ),
+                style: GoogleFonts.poppins(color: Colors.white60, fontSize: 13),
               ),
             ),
             if (latest != null)
@@ -441,8 +450,10 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
                   color: const Color(0x3316A34A),
                   borderRadius: BorderRadius.circular(18),
                 ),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 child: Row(
                   children: [
                     const Icon(
@@ -547,8 +558,12 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
                 'ยังไม่มีข้อมูลการจัดส่ง',
                 'เมื่อมีไรเดอร์รับงาน ระบบจะแสดงตำแหน่งที่นี่',
               )
-            else if (positions.values
-                .every((data) => data.rider == null && data.pickup == null && data.dropoff == null))
+            else if (positions.values.every(
+              (data) =>
+                  data.rider == null &&
+                  data.pickup == null &&
+                  data.dropoff == null,
+            ))
               _buildMapMessage(
                 isLoading
                     ? 'กำลังเชื่อมต่อข้อมูลตำแหน่ง...'
@@ -590,10 +605,7 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
             Text(
               subtitle,
               textAlign: TextAlign.center,
-              style: GoogleFonts.poppins(
-                color: Colors.white70,
-                fontSize: 12,
-              ),
+              style: GoogleFonts.poppins(color: Colors.white70, fontSize: 12),
             ),
           ],
         ),
@@ -615,10 +627,7 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
           Expanded(
             child: Text(
               message,
-              style: GoogleFonts.poppins(
-                color: Colors.white,
-                fontSize: 12,
-              ),
+              style: GoogleFonts.poppins(color: Colors.white, fontSize: 12),
             ),
           ),
         ],
@@ -641,18 +650,11 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
       height: 90,
       point: position,
       child: GestureDetector(
-        onTap: () => _onFocusRequest(
-          delivery,
-          positionOverride: position,
-        ),
+        onTap: () => _onFocusRequest(delivery, positionOverride: position),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              color: color,
-              size: type == _MarkerType.rider ? 42 : 34,
-            ),
+            Icon(icon, color: color, size: type == _MarkerType.rider ? 42 : 34),
             if (label.isNotEmpty)
               Container(
                 margin: const EdgeInsets.only(top: 4),
@@ -694,11 +696,7 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(
-              BootstrapIcons.truck,
-              color: Colors.white54,
-              size: 40,
-            ),
+            const Icon(BootstrapIcons.truck, color: Colors.white54, size: 40),
             const SizedBox(height: 12),
             Text(
               'ยังไม่มีไรเดอร์ที่กำลังจัดส่ง',
@@ -740,8 +738,10 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
     final dropoffPosition = mapData?.dropoff;
     final pickupPosition = mapData?.pickup;
     final focusPosition =
-        riderPosition ?? dropoffPosition ?? pickupPosition ??
-            delivery.riderLastKnownPosition;
+        riderPosition ??
+        dropoffPosition ??
+        pickupPosition ??
+        delivery.riderLastKnownPosition;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 250),
@@ -768,8 +768,10 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
           Row(
             children: [
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: statusColor.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(18),
@@ -817,7 +819,8 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
           _buildParticipantRow(
             icon: BootstrapIcons.person_circle,
             title: 'ผู้ส่ง',
-            value: delivery.senderProfile?.username ??
+            value:
+                delivery.senderProfile?.username ??
                 delivery.senderUid ??
                 'ไม่ระบุ',
           ),
@@ -825,9 +828,16 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
           _buildParticipantRow(
             icon: BootstrapIcons.person,
             title: 'ผู้รับ',
-            value: delivery.receiverProfile?.username ??
+            value:
+                delivery.receiverProfile?.username ??
                 delivery.receiverUid ??
                 'ไม่ระบุ',
+          ),
+          const SizedBox(height: 6),
+          _buildParticipantRow(
+            icon: BootstrapIcons.phone,
+            title: 'เบอร์โทรผู้รับ',
+            value: delivery.receiverProfile?.phone ?? 'ไม่ระบุ',
           ),
           const SizedBox(height: 6),
           _buildParticipantRow(
@@ -840,9 +850,7 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
                       delivery,
                       positionOverride: focusPosition,
                     ),
-                    style: TextButton.styleFrom(
-                      foregroundColor: _green,
-                    ),
+                    style: TextButton.styleFrom(foregroundColor: _green),
                     icon: const Icon(BootstrapIcons.geo_fill, size: 16),
                     label: const Text('ดูตำแหน่ง'),
                   )
@@ -860,7 +868,8 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
             icon: BootstrapIcons.pin_map,
             address: delivery.dropoffAddress,
           ),
-          if (pickupPosition != null || dropoffPosition != null ||
+          if (pickupPosition != null ||
+              dropoffPosition != null ||
               riderPosition != null) ...[
             const SizedBox(height: 14),
             Wrap(
@@ -920,10 +929,7 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
             children: [
               Text(
                 title,
-                style: GoogleFonts.poppins(
-                  color: Colors.white60,
-                  fontSize: 12,
-                ),
+                style: GoogleFonts.poppins(color: Colors.white60, fontSize: 12),
               ),
               Text(
                 value,
@@ -972,10 +978,7 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
               Text(
                 'Lat ${position.latitude.toStringAsFixed(5)}, '
                 'Lng ${position.longitude.toStringAsFixed(5)}',
-                style: GoogleFonts.poppins(
-                  color: Colors.white70,
-                  fontSize: 11,
-                ),
+                style: GoogleFonts.poppins(color: Colors.white70, fontSize: 11),
               ),
             ],
           ),
@@ -1005,10 +1008,7 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
           Expanded(
             child: Text(
               'ไม่มีข้อมูล $title',
-              style: GoogleFonts.poppins(
-                color: Colors.white38,
-                fontSize: 12,
-              ),
+              style: GoogleFonts.poppins(color: Colors.white38, fontSize: 12),
             ),
           ),
         ],
@@ -1070,10 +1070,7 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
     _TrackedDelivery delivery, {
     ll.LatLng? positionOverride,
   }) {
-    _focusDeliveryOnMap(
-      delivery,
-      positionOverride: positionOverride,
-    );
+    _focusDeliveryOnMap(delivery, positionOverride: positionOverride);
   }
 
   bool _focusDeliveryOnMap(
@@ -1091,7 +1088,8 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
     }
 
     final realtime = _currentRiderLocations[delivery.did];
-    final position = positionOverride ??
+    final position =
+        positionOverride ??
         realtime ??
         delivery.riderLastKnownPosition ??
         delivery.dropoffAddress?.position ??
@@ -1123,8 +1121,10 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
       final data = positions[key];
       if (data == null) continue;
       for (final point in data.nonNullPoints) {
-        buffer.write(':${point.latitude.toStringAsFixed(6)},'
-            '${point.longitude.toStringAsFixed(6)}');
+        buffer.write(
+          ':${point.latitude.toStringAsFixed(6)},'
+          '${point.longitude.toStringAsFixed(6)}',
+        );
       }
       buffer.write('|');
     }
@@ -1160,10 +1160,7 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
     final bounds = _createBounds(points);
     if (bounds != null) {
       _mapController.fitCamera(
-        fm.CameraFit.bounds(
-          bounds: bounds,
-          padding: const EdgeInsets.all(80),
-        ),
+        fm.CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(80)),
       );
     }
   }
@@ -1252,6 +1249,7 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
         return _UserProfile(
           uid: uid,
           username: (data['username'] as String?) ?? 'ผู้ใช้งาน',
+          phone: (data['phone'] as String?) ?? '',
         );
       } catch (_) {
         return null;
@@ -1342,9 +1340,7 @@ class _TrackDeliveryPageState extends State<TrackDeliveryPage> {
 
         final display = buffer.isNotEmpty
             ? buffer.toString()
-            : (label?.isNotEmpty == true
-                ? label!
-                : addressId);
+            : (label?.isNotEmpty == true ? label! : addressId);
 
         return _AddressDetails(
           id: addressId,
@@ -1582,10 +1578,15 @@ class _DeliveryMapData {
 }
 
 class _UserProfile {
-  const _UserProfile({required this.uid, required this.username});
+  const _UserProfile({
+    required this.uid,
+    required this.username,
+    required this.phone,
+  });
 
   final String uid;
   final String username;
+  final String phone;
 }
 
 class _RiderProfile {
