@@ -1102,13 +1102,80 @@ class ReceiverPickerSheet extends StatefulWidget {
 class _ReceiverPickerSheetState extends State<ReceiverPickerSheet> {
   final TextEditingController _searchCtrl = TextEditingController();
   List<Map<String, dynamic>> searchResults = [];
+  List<Map<String, dynamic>> allUsers = [];
   bool isLoading = false;
+  bool isInitialLoading = true;
   String searchQuery = '';
   String searchType = 'phone';
 
+  @override
+  void initState() {
+    super.initState();
+    _loadAllUsers();
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadAllUsers() async {
+    setState(() {
+      isInitialLoading = true;
+    });
+
+    try {
+      final currentUid = FirebaseAuth.instance.currentUser?.uid;
+      final querySnapshot = await FirebaseFirestore.instance.collection('users').get();
+
+      final users = querySnapshot.docs.map((doc) {
+        final rawData = doc.data() as Map<String, dynamic>;
+        final data = {...rawData};
+        data['uid'] = doc.id;
+        return data;
+      }).where((data) {
+        final uid = data['uid'];
+        if (uid is! String) {
+          return true;
+        }
+        if (currentUid == null || currentUid.isEmpty) {
+          return true;
+        }
+        return uid != currentUid;
+      }).toList();
+
+      if (mounted) {
+        setState(() {
+          allUsers = users;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        await showErrorDialog(
+          context,
+          title: "เกิดข้อผิดพลาด",
+          message: "ไม่สามารถโหลดรายชื่อผู้ใช้ได้: $e",
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          isInitialLoading = false;
+        });
+      }
+    }
+  }
+
   Future<void> searchUsers() async {
     final searchTerm = _searchCtrl.text.trim();
-    if (searchTerm.isEmpty) return;
+    if (searchTerm.isEmpty) {
+      setState(() {
+        searchQuery = '';
+        searchResults = [];
+      });
+      return;
+    }
 
     setState(() {
       isLoading = true;
@@ -1137,8 +1204,8 @@ class _ReceiverPickerSheetState extends State<ReceiverPickerSheet> {
 
       final currentUid = FirebaseAuth.instance.currentUser?.uid;
       final users = querySnapshot.docs.map((doc) {
-        final data =
-            doc.data()! as Map<String, dynamic>; // Ensure data is a Map
+        final rawData = doc.data()! as Map<String, dynamic>;
+        final data = {...rawData};
         data['uid'] = doc.id;
         return data;
       }).where((data) {
@@ -1388,26 +1455,35 @@ class _ReceiverPickerSheetState extends State<ReceiverPickerSheet> {
 
           // ส่วนแสดงผลลัพธ์
           Expanded(
-            child: isLoading
+            child: isInitialLoading
                 ? const Center(child: CircularProgressIndicator())
-                : searchResults.isEmpty
-                ? Center(
-                    child: Text(
-                      searchQuery.isEmpty
-                          ? "กรอกข้อมูลเพื่อค้นหา"
-                          : "ไม่พบข้อมูลจาก: $searchQuery",
-                      style: TextStyle(color: Colors.grey.shade600),
-                    ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.only(top: 8),
-                    controller: widget.scrollController,
-                    itemCount: searchResults.length,
-                    itemBuilder: (context, index) {
-                      final user = searchResults[index];
-                      return buildUserCard(user);
-                    },
-                  ),
+                : isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : () {
+                        final displayedUsers =
+                            searchQuery.isEmpty ? allUsers : searchResults;
+
+                        if (displayedUsers.isEmpty) {
+                          return Center(
+                            child: Text(
+                              searchQuery.isEmpty
+                                  ? "ไม่พบข้อมูลผู้ใช้"
+                                  : "ไม่พบข้อมูลจาก: $searchQuery",
+                              style: TextStyle(color: Colors.grey.shade600),
+                            ),
+                          );
+                        }
+
+                        return ListView.builder(
+                          padding: const EdgeInsets.only(top: 8),
+                          controller: widget.scrollController,
+                          itemCount: displayedUsers.length,
+                          itemBuilder: (context, index) {
+                            final user = displayedUsers[index];
+                            return buildUserCard(user);
+                          },
+                        );
+                      }(),
           ),
         ],
       ),
